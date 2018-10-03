@@ -319,7 +319,8 @@ class McmcChain(object):
     """!
     @brief A simple markov chain with some helper functions.
     """
-    def __init__(self, theta_0, varepsilon=1e-6, mpi_comm=None, mpi_rank=None):
+    def __init__(self, theta_0, varepsilon=1e-6, global_id=0, mpi_comm=None, mpi_rank=None):
+        self.global_id = global_id
         self.mpi_comm, self.mpi_rank = mpi_comm, mpi_rank
         self._dim = len(theta_0)
         theta_0 = np.asarray(theta_0) + self.var_ball(varepsilon, self._dim)
@@ -391,34 +392,40 @@ class DeMc(McmcSampler):
     \f[
     \theta^* = \theta_i + \gamma(\theta_a + theta_b) + \varepsilon
     \f]
+
+    TODO: Impl Sampler restarts.  Important for huge MCMC runs w/ crashes
     """
     def __init__(self, log_like_fn, n_chains=8, **proposal_kwargs):
         assert n_chains >= 4
         self.n_chains = n_chains
         proposal = 'Gauss'
-        self.accepted_proposals = 0.
-        self.total_proposals = 0.
         super(DeMc, self).__init__(log_like_fn, proposal, **proposal_kwargs)
 
-    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
-        self._freeze_ln_like_fn(**ln_kwargs)
-        # params for DE-MC algo
-        self.accepted_proposals = 0.
-        self.total_proposals = 0.
-        dim = len(theta_0)
-        gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
 
+    def _init_chains(theta_0, varepsilon=1e-6, **kwargs):
         # initilize chains
         self.am_chains = []
         for i in range(self.n_chains):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1)))
 
+    def _init_ln_like_fn(**ln_kwargs):
+        self._freeze_ln_like_fn(**ln_kwargs)
+
+    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
+        self._init_ln_like_fn(**ln_kwargs)
+        # params for DE-MC algo
+        dim = len(theta_0)
+        gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
+        delayed_accept = kwargs.get("delayed_accept", True)
+
+        # Init (serial) chains
+        self._init_chains(theta_0, varepsilon, **kwargs)
+
         # DE-MC algo
-        # for j in range(int(n / self.n_chains)):
         j = 0
-        while j <= n:
-            for i, am_chain in enumerate(self.am_chains):
-                current_chain = self.am_chains[i]
+        while j < (n - self.n_chains):
+            banked_prop_array = []
+            for i, current_chain in enumerate(self.am_chains):
                 # randomly select chain pair from chain pool
                 valid_pool_ids = np.delete(np.array(range(self.n_chains)), i)
                 mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=2)
@@ -437,18 +444,23 @@ class DeMc(McmcSampler):
                 alpha = self._mut_prop_ratio(self._frozen_ln_like_fn,
                                              current_chain.current_pos,
                                              prop_vector)
-                accept_bool = self.metropolis_accept(alpha)
-                if accept_bool:
-                    current_chain.append_sample(prop_vector)
-                    self.accepted_proposals += 1
+                if self.metropolis_accept(alpha):
+                    new_state = prop_vector
+                    self.n_accepted += 1
                 else:
-                    current_chain.append_sample(current_chain.current_pos)
-                self.total_proposals += 1
-                j += 1
+                    new_state = current_chain.current_pos
+                    self.n_rejected += 1
 
-    @property
-    def acceptance_fraction(self):
-        return self.accepted_proposals / self.total_proposals
+                # imediately update chain[i] or bank updates untill all chains complete proposals
+                if not delayed_accept:
+                    current_chain.append_sample(new_state)
+                else:
+                    banked_prop_array.append(new_state)
+                j += 1
+            if delayed_accept:
+                for i, current_chain in enumerate(self.am_chains):
+                    current_chain.append_sample(banked_prop_array[i])
+
 
     def param_est(self, n_burn):
         chain_slice = self.super_chain[n_burn:, :]

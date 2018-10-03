@@ -2,17 +2,18 @@ from __future__ import print_function, division
 import numpy as np
 import sys
 import scipy.stats as stats
+from mpi4py import MPI
 try:
-    from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
+    from bipymc.demc import DeMcMpi
     from bipymc.mc_plot import mc_plot
 except:
     # add to path
     sys.path.append('../.')
-    from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
+    from bipymc.demc import DeMcMpi
     from bipymc.mc_plot import mc_plot
 
 
-def fit_line(mcmc_algo="DE-MC"):
+def fit_line(mcmc_algo="DE-MC-MPI"):
     """!
     @brief Example data from http://dfm.io/emcee/current/user/line/
     For example/testing only.
@@ -69,12 +70,7 @@ def fit_line(mcmc_algo="DE-MC"):
     # === EXAMPLE 1 ===
     print("========== FIT LIN MODEL 1 ===========")
     theta_0 = np.array([4.0, -0.5])
-    if mcmc_algo == "AM":
-        my_mcmc = AdaptiveMetropolis(log_like_fn)
-    elif mcmc_algo == "Metropolis":
-        my_mcmc = Metropolis(log_like_fn)
-    else:
-        my_mcmc = DeMc(log_like_fn, n_chains=50)
+    my_mcmc = DeMcMpi(log_like_fn, n_chains=50)
     my_mcmc.run_mcmc(10000, theta_0, ln_kwargs={'data': y},
                      cov_est=np.array([[0.2, -0.3], [-0.3, 0.01]]))
     # view results
@@ -98,12 +94,7 @@ def fit_line(mcmc_algo="DE-MC"):
     # === EXAMPLE 2 ===
     print("========== FIT LIN MODEL 2 ===========")
     theta_0 = np.array([-0.8, 4.5, 0.2])
-    if mcmc_algo == "AM":
-        my_mcmc = AdaptiveMetropolis(lnprob)
-    elif mcmc_algo == "Metropolis":
-        my_mcmc = Metropolis(lnprob)
-    else:
-        my_mcmc = DeMc(lnprob, n_chains=50)
+    my_mcmc = DeMcMpi(lnprob, n_chains=50)
     my_mcmc.run_mcmc(10000, theta_0, cov_est=np.eye(3) * 1e-3,
                      ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=6000)
@@ -159,5 +150,5 @@ def sample_gauss(mcmc_algo="DE-MC"):
 
 
 if __name__ == "__main__":
-    sample_gauss("DE-MC")
-    fit_line("DE-MC")
+    # sample_gauss("DE-MC")
+    fit_line("DE-MC-MPI")
