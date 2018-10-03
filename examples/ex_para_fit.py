@@ -71,8 +71,7 @@ def fit_line(mcmc_algo="DE-MC-MPI"):
     print("========== FIT LIN MODEL 1 ===========")
     theta_0 = np.array([4.0, -0.5])
     my_mcmc = DeMcMpi(log_like_fn, n_chains=50)
-    my_mcmc.run_mcmc(10000, theta_0, ln_kwargs={'data': y},
-                     cov_est=np.array([[0.2, -0.3], [-0.3, 0.01]]))
+    my_mcmc.run_mcmc(10000, theta_0, ln_kwargs={'data': y}, inflate=1e1)
     # view results
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=4000)
     print("Esimated params: %s" % str(theta_est))
@@ -95,7 +94,7 @@ def fit_line(mcmc_algo="DE-MC-MPI"):
     print("========== FIT LIN MODEL 2 ===========")
     theta_0 = np.array([-0.8, 4.5, 0.2])
     my_mcmc = DeMcMpi(lnprob, n_chains=50)
-    my_mcmc.run_mcmc(10000, theta_0, cov_est=np.eye(3) * 1e-3,
+    my_mcmc.run_mcmc(10000, theta_0,
                      ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=6000)
     print("Esimated params: %s" % str(theta_est))
@@ -113,7 +112,8 @@ def fit_line(mcmc_algo="DE-MC-MPI"):
             savefig='lin_chain_ex_2.png',
             truths=[-0.9594, 4.294, np.log(f_true)])
 
-def sample_gauss(mcmc_algo="DE-MC"):
+
+def sample_gauss(mcmc_algo="DE-MC-MPI"):
     """! @brief Sample from a gaussian distribution """
     mu_gold, std_dev_gold = 5.0, 0.5
 
@@ -135,8 +135,8 @@ def sample_gauss(mcmc_algo="DE-MC"):
     elif mcmc_algo == "Metropolis":
         my_mcmc = Metropolis(log_like_fn)
     else:
-        my_mcmc = DeMc(log_like_fn)
-    my_mcmc.run_mcmc(4000, theta_0, data=[0, 0, 0], cov_est=1.0)
+        my_mcmc = DeMcMpi(log_like_fn)
+    my_mcmc.run_mcmc(4000, theta_0)
     # view results
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=200)
     print("Esimated mu: %s" % str(theta_est))

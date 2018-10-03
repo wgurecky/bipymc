@@ -11,8 +11,8 @@ class DeMcMpi(DeMc):
     """
     def __init__(self, ln_like_fn, n_chains=8, mpi_comm=MPI.COMM_WORLD):
         self.comm = mpi_comm
-        # self.comm_rank = mpi_comm.rank
-        # self.comm_size = mpi_comm.size
+        # self.comm_rank = mpi_comm.Get_rank()
+        # self.comm_size = mpi_comm.Get_size()
         self.local_n_accepted = 0
         self.local_n_rejected = 1
         super(DeMcMPi, self).__init__(log_like_fn, n_chains)
@@ -39,6 +39,7 @@ class DeMcMpi(DeMc):
         # Init parallel chains
         self._init_chains(theta_0, varepsilon, **kwargs)
 
+        import pdb; pdb.set_trace()
         # Parallel DE-MC algo
         j = 0
         while j < (n - self.n_chains):
@@ -55,8 +56,8 @@ class DeMcMpi(DeMc):
 
                 # broadcast current chain state to everyone
                 global_chain_state = np.zeros((self.n_chains, len(theta_0)))
-                self.comm.Allgather([local_chain_state, MPI.DOUBLE],
-                                    [global_chain_state, MPI.DOUBLE])
+                self.comm.Allgather([local_chain_state, MPI.DOUBLE],  # send
+                                    [global_chain_state, MPI.DOUBLE]) # recv
 
                 # generate a proposal vector
                 # randomly select chain pair from chain pool
@@ -92,8 +93,8 @@ class DeMcMpi(DeMc):
                     current_chain.append_sample(banked_prop_array[i])
 
             # Global accept ratio
-            recbuf_n_accepted = np.zeros(comm.get_Size())
-            recbuf_n_rejected = np.zeros(comm.get_Size())
+            recbuf_n_accepted = np.zeros(comm.Get_size())
+            recbuf_n_rejected = np.zeros(comm.Get_size())
             self.comm.Allgather([self.local_n_accepted, MPI.DOUBLE],
                                 [recbuf_n_accepted, MPI.DOUBLE])
             self.comm.Allgather([self.local_n_rejected, MPI.DOUBLE],
