@@ -13,7 +13,7 @@ except:
     from bipymc.mc_plot import mc_plot
 
 
-def fit_line(mcmc_algo="DE-MC-MPI"):
+def fit_line(mcmc_algo, comm):
     """!
     @brief Example data from http://dfm.io/emcee/current/user/line/
     For example/testing only.
@@ -68,52 +68,56 @@ def fit_line(mcmc_algo="DE-MC-MPI"):
         return log_like
 
     # === EXAMPLE 1 ===
-    print("========== FIT LIN MODEL 1 ===========")
+    if comm.rank == 0: print("========== FIT LIN MODEL 1 ===========")
     theta_0 = np.array([4.0, -0.5])
-    my_mcmc = DeMcMpi(log_like_fn, n_chains=50)
-    my_mcmc.run_mcmc(10000, theta_0, ln_kwargs={'data': y}, inflate=1e1)
+    my_mcmc = DeMcMpi(log_like_fn, n_chains=comm.size*10, mpi_comm=comm)
+    my_mcmc.run_mcmc(20000, theta_0, ln_kwargs={'data': y}, inflate=1e-2)
+
     # view results
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=4000)
-    print("Esimated params: %s" % str(theta_est))
-    print("Estimated params sigma: %s " % str(sig_est))
-    print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
-    # vis the parameter estimates
-    mc_plot.plot_mcmc_params(chain,
-            labels=["$y_0$", "m"],
-            savefig='line_mcmc_ex.png',
-            truths=[4.294, -0.9594])
-    # vis the full chain
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=6000)
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
-    mc_plot.plot_mcmc_chain(full_chain,
-            labels=["$y_0$", "m"],
-            savefig='lin_chain_ex.png',
-            truths=[4.294, -0.9594])
+    if comm.rank == 0:
+        print("Esimated params: %s" % str(theta_est))
+        print("Estimated params sigma: %s " % str(sig_est))
+        print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
+        # vis the parameter estimates
+        mc_plot.plot_mcmc_params(chain,
+                labels=["$y_0$", "m"],
+                savefig='line_mcmc_ex.png',
+                truths=[4.294, -0.9594])
+        # vis the full chain
+        mc_plot.plot_mcmc_chain(full_chain,
+                labels=["$y_0$", "m"],
+                savefig='lin_chain_ex.png',
+                truths=[4.294, -0.9594])
 
 
     # === EXAMPLE 2 ===
-    print("========== FIT LIN MODEL 2 ===========")
+    comm.Barrier()
+    if comm.rank == 0: print("========== FIT LIN MODEL 2 ===========")
     theta_0 = np.array([-0.8, 4.5, 0.2])
-    my_mcmc = DeMcMpi(lnprob, n_chains=50)
-    my_mcmc.run_mcmc(10000, theta_0,
-                     ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
+    my_mcmc = DeMcMpi(lnprob, n_chains=comm.size*10, mpi_comm=comm)
+    my_mcmc.run_mcmc(20000, theta_0,
+                     ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e-2)
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=6000)
-    print("Esimated params: %s" % str(theta_est))
-    print("Estimated params sigma: %s " % str(sig_est))
-    print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
-    # vis the parameter estimates
-    mc_plot.plot_mcmc_params(chain,
-            labels=["m", "$y_0$", "$\mathrm{ln}(f)$"],
-            savefig='line_mcmc_ex_2.png',
-            truths=[-0.9594, 4.294, np.log(f_true)])
-    # vis the full chain
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
-    mc_plot.plot_mcmc_chain(full_chain,
-            labels=["m", "$y_0$", "$\mathrm{ln}(f)$"],
-            savefig='lin_chain_ex_2.png',
-            truths=[-0.9594, 4.294, np.log(f_true)])
+    if comm.rank == 0:
+        print("Esimated params: %s" % str(theta_est))
+        print("Estimated params sigma: %s " % str(sig_est))
+        print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
+        # vis the parameter estimates
+        mc_plot.plot_mcmc_params(chain,
+                labels=["m", "$y_0$", "$\mathrm{ln}(f)$"],
+                savefig='line_mcmc_ex_2.png',
+                truths=[-0.9594, 4.294, np.log(f_true)])
+        # vis the full chain
+        mc_plot.plot_mcmc_chain(full_chain,
+                labels=["m", "$y_0$", "$\mathrm{ln}(f)$"],
+                savefig='lin_chain_ex_2.png',
+                truths=[-0.9594, 4.294, np.log(f_true)])
 
 
-def sample_gauss(mcmc_algo="DE-MC-MPI"):
+def sample_gauss(mcmc_algo, comm):
     """! @brief Sample from a gaussian distribution """
     mu_gold, std_dev_gold = 5.0, 0.5
 
@@ -128,27 +132,31 @@ def sample_gauss(mcmc_algo="DE-MC-MPI"):
         else:
             return -np.inf
 
-    print("========== SAMPLE GAUSSI ===========")
+    if comm.rank == 0: print("========== SAMPLE GAUSSI ===========")
     theta_0 = np.array([1.0])
-    if mcmc_algo == "AM":
-        my_mcmc = AdaptiveMetropolis(log_like_fn)
-    elif mcmc_algo == "Metropolis":
-        my_mcmc = Metropolis(log_like_fn)
-    else:
-        my_mcmc = DeMcMpi(log_like_fn)
+    my_mcmc = DeMcMpi(log_like_fn, n_chains=comm.size*4, mpi_comm=comm)
     my_mcmc.run_mcmc(4000, theta_0)
+
     # view results
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=200)
-    print("Esimated mu: %s" % str(theta_est))
-    print("Estimated sigma: %s " % str(sig_est))
-    print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
-    # vis the parameter estimates
-    mc_plot.plot_mcmc_params(chain, ["$\mu$"], savefig='gauss_mu_mcmc_ex.png', truths=[5.0])
-    # vis the full chain
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=1000)
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
-    mc_plot.plot_mcmc_chain(full_chain, ["$\mu$"], savefig='gauss_mu_chain_ex.png', truths=[5.0])
+
+    if comm.rank == 0:
+        print("Esimated mu: %s" % str(theta_est))
+        print("Estimated sigma: %s " % str(sig_est))
+        print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
+        sys.stdout.flush()
+        # vis the parameter estimates
+        mc_plot.plot_mcmc_params(chain, ["$\mu$"], savefig='gauss_mu_mcmc_ex.png', truths=[5.0])
+        # vis the full chain
+        mc_plot.plot_mcmc_chain(full_chain, ["$\mu$"], savefig='gauss_mu_chain_ex.png', truths=[5.0])
+    else:
+        pass
 
 
 if __name__ == "__main__":
-    sample_gauss("DE-MC")
-    fit_line("DE-MC-MPI")
+    comm = MPI.COMM_WORLD
+    print("Hello From Rank: ", comm.rank)
+    sys.stdout.flush()
+    sample_gauss("DE-MC", comm)
+    fit_line("DE-MC-MPI", comm)

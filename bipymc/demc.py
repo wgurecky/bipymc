@@ -1,5 +1,6 @@
 from bipymc.samplers import *
 from mpi4py import MPI
+import sys
 
 
 class DeMcMpi(DeMc):
@@ -23,7 +24,6 @@ class DeMcMpi(DeMc):
         rank_chain_ids = np.array_split(np.array(range(self.n_chains)), self.comm.size)[self.comm.rank]
         self.rank_chain_ids = rank_chain_ids
         self.am_chains = []
-        print(rank_chain_ids)
         for i, c_id in enumerate(self.rank_chain_ids):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1),
                                   global_id=c_id, mpi_comm=self.comm, mpi_rank=self.comm.rank))
@@ -42,7 +42,7 @@ class DeMcMpi(DeMc):
 
         # Parallel DE-MC algo
         j = 0
-        while j < (n - self.n_chains):
+        while j < int((n - self.n_chains) / self.comm.size):
             banked_prop_array = []
             for i, current_chain in enumerate(self.am_chains):
                 # current global chain id
@@ -91,6 +91,7 @@ class DeMcMpi(DeMc):
             if delayed_accept:
                 for i, current_chain in enumerate(self.am_chains):
                     current_chain.append_sample(banked_prop_array[i])
+            self.comm.Barrier()
 
         # Global accept ratio
         recbuf_n_accepted = np.zeros(self.comm.Get_size(), dtype=int)
@@ -101,10 +102,24 @@ class DeMcMpi(DeMc):
                             [recbuf_n_rejected, MPI.INT])
         self.n_accepted = np.sum(recbuf_n_accepted)
         self.n_rejected = np.sum(recbuf_n_rejected)
+        self.comm.Barrier()
 
+    def param_est(self, n_burn, collection_rank=0):
+        """!
+        @brief Collect all chains on root and
+        estimate global chain stats on root rank.
+        """
+        self.comm.Barrier()
+        chain_slice = self.super_chain_mpi(collection_rank)
+        if self.comm.rank == collection_rank:
+            chain_slice = chain_slice[n_burn:, :]
+            mean_theta = np.mean(chain_slice, axis=0)
+            std_theta = np.std(chain_slice, axis=0)
+            return mean_theta, std_theta, chain_slice
+        else:
+            return None, None, None
 
-    @property
-    def super_chain(self, collection_rank=0):
+    def super_chain_mpi(self, collection_rank=0):
         """!
         @brief Gather all chains to master rank and append
         their chain states to a global chain state.
@@ -115,14 +130,13 @@ class DeMcMpi(DeMc):
         return self._super_chain(collection_rank)
 
     def _super_chain(self, collection_rank=0):
+        all_chains = self.gather_all_chains(collection_rank)
         if self.comm.rank == collection_rank:
             super_ch = np.zeros((self.n_chains * self.am_chains[0].chain.shape[0],
                                  self.am_chains[0].chain.shape[1]))
-            print("Supper Chain Shape:", super_ch.shape)
-            for i, chain in enumerate(self.iter_all_chains(collection_rank)):
-                print(chain.chain.shape)
-                # super_ch[i::self.n_chains, :] = chain.chain
-                super_ch[i::len(self.am_chains), :] = chain.chain
+            for i, chain in enumerate(all_chains):
+                # super_ch[i::len(self.am_chains), :] = chain.chain
+                super_ch[i::self.n_chains, :] = chain.chain
             return super_ch
         else:
             return None
@@ -142,24 +156,21 @@ class DeMcMpi(DeMc):
         for chain in self.am_chains:
             yield chain
 
-    def iter_all_chains(self, collection_rank=0):
+    def iter_all_chains(self, collection_rank=0, verbose=0):
         """!
         @brief Global chain generator
         """
-        if self.comm.rank == collection_rank:
-            for c_id in range(self.n_chains):
-                yield self.get_chain(c_id, collection_rank)
-        else:
-            # everyone else just gets a bunch of None
-            for c_id in range(self.n_chains):
-                yield None
+        if verbose: print("Iter all chains on rank: ", self.comm.rank)
+        sys.stdout.flush()
+        for c_id in range(self.n_chains):
+            yield self.get_chain(c_id, collection_rank)
 
-    def get_chain(self, c_id, collection_rank=0):
+    def get_chain(self, c_id, collection_rank=0, verbose=0):
         """!
         @brief  Send the desired chain to the desired collection_rank.
         """
         r = self.get_chain_rank(c_id)
-        if r == self.comm.rank:
+        if r == collection_rank:
             for chain in self.am_chains:
                 if c_id == chain.global_id:
                     return chain
@@ -167,17 +178,21 @@ class DeMcMpi(DeMc):
             if self.comm.rank == collection_rank:
                 # wait to recive chain from other rank
                 status = MPI.Status()
-                recbuf = None
-                self.comm.recv(recbuf, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+                recbuf = self.comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+                if verbose: print("Rank: ", self.comm.rank, "Got Chain:", recbuf)
+                sys.stdout.flush()
                 return recbuf
             else:
                 assert 0 <= c_id < self.n_chains
                 matched_chain = None
-                if self.get_chain_rank(c_id) == self.comm.rank:
+                if r == self.comm.rank:
                     for chain in self.am_chains:
                         if c_id == chain.global_id:
                             matched_chain = chain
                             # send chain to master
+                            if verbose:
+                                print("Rank: ", self.comm.rank, "Sent a Chain:", matched_chain)
+                            sys.stdout.flush()
                             self.comm.send(matched_chain, dest=collection_rank, tag=self.comm.rank)
                 return None
 

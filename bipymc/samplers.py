@@ -321,7 +321,7 @@ class McmcChain(object):
     """
     def __init__(self, theta_0, varepsilon=1e-6, global_id=0, mpi_comm=None, mpi_rank=None):
         self.global_id = global_id
-        self.mpi_comm, self.mpi_rank = mpi_comm, mpi_rank
+        # self.mpi_comm, self.mpi_rank = mpi_comm, mpi_rank
         self._dim = len(theta_0)
         theta_0 = np.asarray(theta_0) + self.var_ball(varepsilon, self._dim)
         # init the 2d array of shape (iteration, <theta_vec>)
