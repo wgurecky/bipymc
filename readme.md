@@ -6,7 +6,7 @@ Bayesian Inference for PYthon using Markov Chain Monte Carlo (BiPyMc)
 BiPyMc contains short example implementations of common Markov chain Monte Carlo routines.
 This package is intended for educational use only.
 
-Try [emcee](https://arxiv.org/abs/1202.3665)
+Try [emcee](https://arxiv.org/abs/1202.3665),
 [pymc3](https://docs.pymc.io/), or Dakota for `real` MCMC applications, however, one can
 use BiPyMc as a starting point for implementing their own fancy MCMC samplers.
 
