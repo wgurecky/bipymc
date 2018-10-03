@@ -9,14 +9,24 @@ This package is intended for educational use only.
 The author suggests emcee, pymc3, or Dakota for `real` MCMC applications, however, one can
 use BiPyMc as a starting point for implementing their own fancy MCMC samplers.
 
+Implemented Example MCMC Methods
+---------------------------------
 
-Quickstart
-----------
-
+- Metropolis-Hastings
+- Adaptive Metropolis (AM)
+- Differential Evolution Metropolis (DE-MC)
 
 
 References
 -----------
+
+Braak, C.J.F.T. Statistics and Computing (2006) 16: 239. [URL](https://doi.org/10.1007/s11222-006-8769-1)
+rXiv:1710.09486 [cs.CE]  [URL](https://arxiv.org/pdf/1710.09486.pdf)
+[emcee](https://arxiv.org/abs/1202.3665)
+
+
+Quickstart
+----------
 
 
 
