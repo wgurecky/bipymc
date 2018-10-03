@@ -26,11 +26,33 @@ Braak, C.J.F.T. Statistics and Computing (2006) 16: 239. [https://doi.org/10.100
 rXiv:1710.09486  [https://arxiv.org/pdf/1710.09486.pdf](https://arxiv.org/pdf/1710.09486.pdf)
 
 
-
 Quickstart
 ----------
 
+Install corner for plots (optional).
 
+    pip install corner
+
+Or
+
+    conda install -c astropy corner
+
+Install and run examples:
+
+    git clone https://github.com/wgurecky/bipymc.git
+    cd bipymc
+    python setup.py develop --user
+    python examples/ex_line_fit.py
+
+
+Depends
+-------
+
+- python3.2+
+- numpy
+- scipy
+- matplotlib (optional for plotting)
+- [corner](https://corner.readthedocs.io/en/latest/)  (optional for plotting)
 
 License
 --------
