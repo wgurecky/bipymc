@@ -23,6 +23,7 @@ class DeMcMpi(DeMc):
         rank_chain_ids = np.array_split(np.array(range(self.n_chains)), self.comm.size)[self.comm.rank]
         self.rank_chain_ids = rank_chain_ids
         self.am_chains = []
+        print(rank_chain_ids)
         for i, c_id in enumerate(self.rank_chain_ids):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1),
                                   global_id=c_id, mpi_comm=self.comm, mpi_rank=self.comm.rank))
@@ -117,7 +118,10 @@ class DeMcMpi(DeMc):
         if self.comm.rank == collection_rank:
             super_ch = np.zeros((self.n_chains * self.am_chains[0].chain.shape[0],
                                  self.am_chains[0].chain.shape[1]))
+            print("Supper Chain Shape:", super_ch.shape)
             for i, chain in enumerate(self.iter_all_chains(collection_rank)):
+                print(chain.chain.shape)
+                # super_ch[i::self.n_chains, :] = chain.chain
                 super_ch[i::len(self.am_chains), :] = chain.chain
             return super_ch
         else:
