@@ -402,17 +402,18 @@ class DeMc(McmcSampler):
         super(DeMc, self).__init__(log_like_fn, proposal, **proposal_kwargs)
 
 
-    def _init_chains(theta_0, varepsilon=1e-6, **kwargs):
+    def _init_chains(self, theta_0, varepsilon=1e-6, **kwargs):
         # initilize chains
         self.am_chains = []
         for i in range(self.n_chains):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1)))
 
-    def _init_ln_like_fn(**ln_kwargs):
+    def _init_ln_like_fn(self, ln_kwargs={}):
         self._freeze_ln_like_fn(**ln_kwargs)
 
     def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
-        self._init_ln_like_fn(**ln_kwargs)
+        # self._freeze_ln_like_fn(**ln_kwargs)
+        self._init_ln_like_fn(ln_kwargs)
         # params for DE-MC algo
         dim = len(theta_0)
         gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))

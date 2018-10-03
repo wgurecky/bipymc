@@ -1,4 +1,4 @@
-from samplers import *
+from bipymc.samplers import *
 from mpi4py import MPI
 
 
@@ -15,22 +15,22 @@ class DeMcMpi(DeMc):
         # self.comm_size = mpi_comm.Get_size()
         self.local_n_accepted = 0
         self.local_n_rejected = 1
-        super(DeMcMPi, self).__init__(log_like_fn, n_chains)
+        super(DeMcMpi, self).__init__(ln_like_fn, n_chains)
 
-    def _init_chains(theta_0, varepsilon=1e-6, **kwargs):
+    def _init_chains(self, theta_0, varepsilon=1e-6, **kwargs):
         # initilize chains
         # distribute chains evenly amoungst the proc ranks
         rank_chain_ids = np.array_split(np.array(range(self.n_chains)), self.comm.size)[self.comm.rank]
         self.rank_chain_ids = rank_chain_ids
         self.am_chains = []
         for i, c_id in enumerate(self.rank_chain_ids):
-            self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1)),
-                                  global_id=c_id, mpi_comm=self.comm, mpi_rank=self.comm.rank)
+            self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1),
+                                  global_id=c_id, mpi_comm=self.comm, mpi_rank=self.comm.rank))
 
-    def _mcmc_run(self, n, theta_0, varepsilon, ln_kwargs={}, **kwargs):
+    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
         self.local_n_accepted = 0
         self.local_n_rejected = 1
-        self._init_ln_like_fn(**ln_kwargs)
+        self._init_ln_like_fn(ln_kwargs)
         # params for DE-MC algo
         dim = len(theta_0)
         gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
@@ -39,7 +39,6 @@ class DeMcMpi(DeMc):
         # Init parallel chains
         self._init_chains(theta_0, varepsilon, **kwargs)
 
-        import pdb; pdb.set_trace()
         # Parallel DE-MC algo
         j = 0
         while j < (n - self.n_chains):
@@ -50,8 +49,8 @@ class DeMcMpi(DeMc):
 
                 # gather the latest state from all chains
                 local_chain_state = []
-                for i, current_chain in enumerate(self.am_chains):
-                    local_chain_state.append(current_chain.current_pos)
+                for i, local_chain in enumerate(self.am_chains):
+                    local_chain_state.append(local_chain.current_pos)
                 local_chain_state = np.array(local_chain_state)
 
                 # broadcast current chain state to everyone
@@ -92,15 +91,15 @@ class DeMcMpi(DeMc):
                 for i, current_chain in enumerate(self.am_chains):
                     current_chain.append_sample(banked_prop_array[i])
 
-            # Global accept ratio
-            recbuf_n_accepted = np.zeros(comm.Get_size())
-            recbuf_n_rejected = np.zeros(comm.Get_size())
-            self.comm.Allgather([self.local_n_accepted, MPI.DOUBLE],
-                                [recbuf_n_accepted, MPI.DOUBLE])
-            self.comm.Allgather([self.local_n_rejected, MPI.DOUBLE],
-                                [recbuf_n_rejected, MPI.DOUBLE])
-            self.n_accepted = np.sum(recbuf_n_accepted)
-            self.n_rejected = np.sum(recbuf_n_rejected)
+        # Global accept ratio
+        recbuf_n_accepted = np.zeros(self.comm.Get_size(), dtype=int)
+        recbuf_n_rejected = np.zeros(self.comm.Get_size(), dtype=int)
+        self.comm.Allgather([np.asarray(self.local_n_accepted, dtype=int), MPI.INT],
+                            [recbuf_n_accepted, MPI.INT])
+        self.comm.Allgather([np.asarray(self.local_n_rejected, dtype=int), MPI.INT],
+                            [recbuf_n_rejected, MPI.INT])
+        self.n_accepted = np.sum(recbuf_n_accepted)
+        self.n_rejected = np.sum(recbuf_n_rejected)
 
 
     @property
@@ -118,7 +117,7 @@ class DeMcMpi(DeMc):
         if self.comm.rank == collection_rank:
             super_ch = np.zeros((self.n_chains * self.am_chains[0].chain.shape[0],
                                  self.am_chains[0].chain.shape[1]))
-            for i, chain in enumerate(self.iter_all_chains):
+            for i, chain in enumerate(self.iter_all_chains(collection_rank)):
                 super_ch[i::len(self.am_chains), :] = chain.chain
             return super_ch
         else:
@@ -155,20 +154,28 @@ class DeMcMpi(DeMc):
         """!
         @brief  Send the desired chain to the desired collection_rank.
         """
-        if self.comm.rank == collection_rank:
-            # wait to recive chain from other rank
-            status = MPI.Status()
-            recbuf = None
-            self.comm.recv(recbuf, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+        r = self.get_chain_rank(c_id)
+        if r == self.comm.rank:
+            for chain in self.am_chains:
+                if c_id == chain.global_id:
+                    return chain
         else:
-            assert 0 <= c_id < self.n_chains
-            matched_chain = None
-            if self.get_chain_rank(c_id) == self.comm.rank:
-                for chain in self.am_chains:
-                    if c_id == chain.global_id:
-                        matched_chain = chain
-                        # send chain to master
-                        comm.send(matched_chain, dest=collection_rank, tag=self.comm.rank)
+            if self.comm.rank == collection_rank:
+                # wait to recive chain from other rank
+                status = MPI.Status()
+                recbuf = None
+                self.comm.recv(recbuf, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+                return recbuf
+            else:
+                assert 0 <= c_id < self.n_chains
+                matched_chain = None
+                if self.get_chain_rank(c_id) == self.comm.rank:
+                    for chain in self.am_chains:
+                        if c_id == chain.global_id:
+                            matched_chain = chain
+                            # send chain to master
+                            self.comm.send(matched_chain, dest=collection_rank, tag=self.comm.rank)
+                return None
 
     def get_chain_rank(self, c_id):
         """!
@@ -178,7 +185,7 @@ class DeMcMpi(DeMc):
         assert 0 <= c_id < self.n_chains
         # get the MPI rank which hold chain with id: c_id
         rank_chain_ids = np.array_split(np.array(range(self.n_chains)), self.comm.size)
-        for r, chain_ids in enumerate(rank_chain_ids)
+        for r, chain_ids in enumerate(rank_chain_ids):
             if c_id in chain_ids:
                 return r
         raise RuntimeError("ERROR: c_id not in global chain ids")

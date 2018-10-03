@@ -150,5 +150,5 @@ def sample_gauss(mcmc_algo="DE-MC-MPI"):
 
 
 if __name__ == "__main__":
-    # sample_gauss("DE-MC")
+    sample_gauss("DE-MC")
     fit_line("DE-MC-MPI")
