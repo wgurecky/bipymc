@@ -12,8 +12,6 @@ class DeMcMpi(DeMc):
     """
     def __init__(self, ln_like_fn, n_chains=8, mpi_comm=MPI.COMM_WORLD):
         self.comm = mpi_comm
-        # self.comm_rank = mpi_comm.Get_rank()
-        # self.comm_size = mpi_comm.Get_size()
         self.local_n_accepted = 0
         self.local_n_rejected = 1
         super(DeMcMpi, self).__init__(ln_like_fn, n_chains)
@@ -40,22 +38,43 @@ class DeMcMpi(DeMc):
         self._init_ln_like_fn(ln_kwargs)
         # params for DE-MC algo
         dim = len(theta_0)
-        gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
-        delayed_accept = kwargs.get("delayed_accept", True)
+        gamma_base = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
+        # control for chain shuffle logic.
+        flip_prob = kwargs.get("flip", 0.1)
+        flip_prob = np.clip(flip_prob, 0.0, 1.0)
+        shuffle = kwargs.get("shuffle", True)
 
 
-        def update_chain_pool(current_chain, chain_pool):
-            # valid_pool_ids = np.delete(np.array(range(self.n_chains)), c_id)
-            valid_pool_ids =np.array(range(len(chain_pool)))
+        def update_chain_pool(k, c_id, current_chain, prop_chain_pool, prop_chain_pool_ids):
+            """!
+            @brief Update the current chain with proposal from prop_chain_pool
+            @param k  int current mcmc iteration
+            @param c_id int current chain global id
+            @param current_chain  bipymc.samplers.McmcChain instance
+            @param prop_chain_pool  np_ndarray  proposal states
+            """
+            valid_pool_ids = np.array(range(len(prop_chain_pool)))
+            if c_id in prop_chain_pool_ids:
+                valid_idxs = (c_id != prop_chain_pool_ids)
+                valid_pool_ids = valid_pool_ids[valid_idxs]
+
+            # DE mutation step
             mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=2)
-            mut_a_chain_state = chain_pool[mut_chain_ids[0]]
-            mut_b_chain_state = chain_pool[mut_chain_ids[1]]
+            mut_a_chain_state = prop_chain_pool[mut_chain_ids[0]]
+            mut_b_chain_state = prop_chain_pool[mut_chain_ids[1]]
 
-            # generate proposal vector
+            # Every 10th step has chance to take large exploration step
+            if k % 10 == 0:
+                gamma = np.random.choice([gamma_base, 1.0], p=[0.1, 0.9])
+            else:
+                gamma = gamma_base
+
+            # Generate proposal vector
             prop_vector = gamma * (mut_a_chain_state - mut_b_chain_state)
             prop_vector += current_chain.current_pos
             prop_vector += McmcChain.var_ball(varepsilon * 1e-3, dim)
 
+            # Metropolis ratio
             alpha = self._mut_prop_ratio(self._frozen_ln_like_fn,
                                          current_chain.current_pos,
                                          prop_vector)
@@ -73,9 +92,15 @@ class DeMcMpi(DeMc):
         self._init_chains(theta_0, varepsilon, **kwargs)
 
         # Parallel DE-MC algo with emcee modification
-        j = 0
+        j, k = 0, 0
         while j < int((n - self.n_chains) / self.comm.size):
-            flip_bool = np.random.choice([True, False], p=[0.5, 0.5])
+            # chance to flib a/b chain groups
+            flip_bool = np.random.choice([True, False], p=[flip_prob, 1 - flip_prob])
+
+            # random chain shuffle order
+            shuffle_idx = np.array(range(self.n_chains))
+            if shuffle:
+                np.random.shuffle(shuffle_idx)
 
             # gather the latest state from all chains
             local_chain_state = self._get_local_chain_state()
@@ -84,9 +109,9 @@ class DeMcMpi(DeMc):
             global_chain_state = np.zeros((self.n_chains, len(theta_0)))
             self.comm.Allgather([local_chain_state, MPI.DOUBLE],  # send
                                 [global_chain_state, MPI.DOUBLE]) # recv
-            global_chain_a, global_chain_b = np.array_split(global_chain_state, 2)
+            global_chain_a, global_chain_b = np.array_split(global_chain_state[shuffle_idx], 2)
             global_chain_a_ids, global_chain_b_ids = \
-                    np.array_split(np.array(range(self.n_chains)), 2)
+                    np.array_split(shuffle_idx, 2)
             if flip_bool:
                 global_chain_a, global_chain_b = global_chain_b, global_chain_a
                 global_chain_a_ids, global_chain_b_ids = global_chain_b_ids, global_chain_a_ids
@@ -98,7 +123,7 @@ class DeMcMpi(DeMc):
                 if c_id not in global_chain_a_ids:
                     continue
                 j += 1
-                update_chain_pool(current_chain, global_chain_b)
+                update_chain_pool(j, c_id, current_chain, global_chain_b, global_chain_b_ids)
 
             # gather the latest state from all chains
             local_chain_state = self._get_local_chain_state()
@@ -107,9 +132,9 @@ class DeMcMpi(DeMc):
             global_chain_state = np.zeros((self.n_chains, len(theta_0)))
             self.comm.Allgather([local_chain_state, MPI.DOUBLE],  # send
                                 [global_chain_state, MPI.DOUBLE]) # recv
-            global_chain_a, global_chain_b = np.array_split(global_chain_state, 2)
+            global_chain_a, global_chain_b = np.array_split(global_chain_state[shuffle_idx], 2)
             global_chain_a_ids, global_chain_b_ids = \
-                    np.array_split(np.array(range(self.n_chains)), 2)
+                    np.array_split(shuffle_idx, 2)
             if flip_bool:
                 global_chain_a, global_chain_b = global_chain_b, global_chain_a
                 global_chain_a_ids, global_chain_b_ids = global_chain_b_ids, global_chain_a_ids
@@ -121,8 +146,8 @@ class DeMcMpi(DeMc):
                 if c_id not in global_chain_b_ids:
                     continue
                 j += 1
-                update_chain_pool(current_chain, global_chain_a)
-
+                update_chain_pool(j, c_id, current_chain, global_chain_a, global_chain_a_ids)
+            k += 1
             self.comm.Barrier()
 
         # Global accept ratio

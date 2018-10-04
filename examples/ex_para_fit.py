@@ -11,6 +11,7 @@ except:
     sys.path.append('../.')
     from bipymc.demc import DeMcMpi
     from bipymc.mc_plot import mc_plot
+np.random.seed(42)
 
 
 def fit_line(mcmc_algo, comm):
@@ -71,10 +72,10 @@ def fit_line(mcmc_algo, comm):
     if comm.rank == 0: print("========== FIT LIN MODEL 1 ===========")
     theta_0 = np.array([4.0, -0.5])
     my_mcmc = DeMcMpi(log_like_fn, n_chains=comm.size*10, mpi_comm=comm)
-    my_mcmc.run_mcmc(20000, theta_0, ln_kwargs={'data': y}, inflate=1e-2)
+    my_mcmc.run_mcmc(500 * 100, theta_0, ln_kwargs={'data': y}, inflate=1e1)
 
     # view results
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=6000)
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=10000)
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
     if comm.rank == 0:
         print("Esimated params: %s" % str(theta_est))
@@ -97,9 +98,9 @@ def fit_line(mcmc_algo, comm):
     if comm.rank == 0: print("========== FIT LIN MODEL 2 ===========")
     theta_0 = np.array([-0.8, 4.5, 0.2])
     my_mcmc = DeMcMpi(lnprob, n_chains=comm.size*10, mpi_comm=comm)
-    my_mcmc.run_mcmc(20000, theta_0,
-                     ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e-2)
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=6000)
+    my_mcmc.run_mcmc(500 * 100, theta_0,
+                     ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=10000)
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
     if comm.rank == 0:
         print("Esimated params: %s" % str(theta_est))
