@@ -19,89 +19,6 @@ class McmcProposal(object):
         raise NotImplementedError
 
 
-class DrChain(object):
-    def __init__(self, ln_like_fn, **kwargs):
-        self.current_depth = 1
-        self.dr_sample_chain = []
-        self.dr_prop_chain = []
-        self.max_depth = kwargs.get("max_depth", 5)
-        self.ln_like_fn = ln_like_fn
-
-    def run_dr_chain(self, dr_seed_chain, prop_base_cov):
-        """!
-        Run the delayed rejection (DR) chain.  break
-        early if we happen to accept a sample.
-        @prop_base_cov  covarience of the base MCMC proposal
-        """
-        assert len(dr_seed_chain) == 2
-        #param lambda_0 original location of MCMC chain before DR
-        #param beta_0 proposed, but rejected sample from original MCMC chain before DR
-        lambda_0 = dr_seed_chain[0]
-        beta_1 = dr_seed_chain[1]
-        self.dr_sample_chain = deepcopy(dr_seed_chain)
-
-        for i in range(self.max_depth):
-            depth = i + 1
-            # get a proposal density distribution based on all previous
-            # samples in the dr chain.
-            self.dr_prop_chain.append(DrGaussianProposal(self.ln_like_fn,
-                                      prop_base_cov))
-            new_prop_dist = self.dr_prop_chain[-1]._wrapped_mv_gausasin(dr_sample_chain)
-            # sample the proposal density distribution
-        pass
-
-class DrGaussianProposal(McmcProposal):
-    """!
-    @brief Delayed rejection gaussian proposal chain
-    with proposal shrinkage.  The proposal density of a delayed chain
-    is updated with knowlege of other past proposed steps in the DR
-    chain.  The simplest solution is to adjust the mean to the average
-    of all past attempted steps in the DR chain and adopt a covariance
-    which shinks as one tries more and more steps in the DR chain.
-    """
-    def __init__(self, ln_like_fn, base_cov):
-        self.ln_like_fn = ln_like_fn
-        self.depth = 1
-        self.cov_base = base_cov
-        super(DrGaussianProposal, self).__init__()
-
-    def multi_stage_proposal_dist(self, prop_lambda, prop_past_beta):
-        """!
-        @brief Compute
-        \beta_i \sim g_i(\beta_i | \lambda, \beta_1, ... \beta_{i-1})
-        """
-        pass
-
-    def prob_ratio(self, *args, **kwargs):
-        return np.exp(self.ln_prob_ratio(*args, **kwargs))
-
-    def ln_prob_ratio(self, *args, **kwargs):
-        pass
-
-    def _ln_likelihood_ratio(self, beta_past, beta_proposed):
-        past_likelihood = self.ln_like_fn(beta_past)
-        proposed_likelihood = self.ln_like_fn(beta_proposed)
-        return proposed_likelihood - past_likelihood
-
-    def _ln_proposal_ratio(self, beta_proposal, beta_dr_list):
-        beta_dr_list= []
-        numerator = ()
-        pass
-
-    def _wrapped_mv_gausasin(self, beta_dr_list):
-        shrinkage_array = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
-        mu = np.mean(beta_dr_list)
-        cov = self.cov_base  * shrinkage_array[len(beta_dr_list)]
-        return stats.multivariate_normal(mean=mu, cov=cov)
-
-    def _sample_wrapped_mv_gaussian(self, n):
-        pass
-
-    def _ln_acceptance_ratio(self):
-        pass
-
-
-
 class GaussianProposal(McmcProposal):
     def __init__(self, mu=None, cov=None):
         """!
@@ -402,8 +319,9 @@ class McmcChain(object):
     """!
     @brief A simple markov chain with some helper functions.
     """
-    def __init__(self, theta_0, varepsilon=1e-6, mpi_comm=None, mpi_rank=None):
-        self.mpi_comm, self.mpi_rank = mpi_comm, mpi_rank
+    def __init__(self, theta_0, varepsilon=1e-6, global_id=0, mpi_comm=None, mpi_rank=None):
+        self.global_id = global_id
+        # self.mpi_comm, self.mpi_rank = mpi_comm, mpi_rank
         self._dim = len(theta_0)
         theta_0 = np.asarray(theta_0) + self.var_ball(varepsilon, self._dim)
         # init the 2d array of shape (iteration, <theta_vec>)
@@ -474,34 +392,41 @@ class DeMc(McmcSampler):
     \f[
     \theta^* = \theta_i + \gamma(\theta_a + theta_b) + \varepsilon
     \f]
+
+    TODO: Impl Sampler restarts.  Important for huge MCMC runs w/ crashes
     """
     def __init__(self, log_like_fn, n_chains=8, **proposal_kwargs):
         assert n_chains >= 4
         self.n_chains = n_chains
         proposal = 'Gauss'
-        self.accepted_proposals = 0.
-        self.total_proposals = 0.
         super(DeMc, self).__init__(log_like_fn, proposal, **proposal_kwargs)
 
-    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
-        self._freeze_ln_like_fn(**ln_kwargs)
-        # params for DE-MC algo
-        self.accepted_proposals = 0.
-        self.total_proposals = 0.
-        dim = len(theta_0)
-        gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
 
+    def _init_chains(self, theta_0, varepsilon=1e-6, **kwargs):
         # initilize chains
         self.am_chains = []
         for i in range(self.n_chains):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1)))
 
+    def _init_ln_like_fn(self, ln_kwargs={}):
+        self._freeze_ln_like_fn(**ln_kwargs)
+
+    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
+        # self._freeze_ln_like_fn(**ln_kwargs)
+        self._init_ln_like_fn(ln_kwargs)
+        # params for DE-MC algo
+        dim = len(theta_0)
+        gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
+        delayed_accept = kwargs.get("delayed_accept", True)
+
+        # Init (serial) chains
+        self._init_chains(theta_0, varepsilon, **kwargs)
+
         # DE-MC algo
-        # for j in range(int(n / self.n_chains)):
         j = 0
-        while j <= n:
-            for i, am_chain in enumerate(self.am_chains):
-                current_chain = self.am_chains[i]
+        while j < (n - self.n_chains):
+            banked_prop_array = []
+            for i, current_chain in enumerate(self.am_chains):
                 # randomly select chain pair from chain pool
                 valid_pool_ids = np.delete(np.array(range(self.n_chains)), i)
                 mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=2)
@@ -520,18 +445,23 @@ class DeMc(McmcSampler):
                 alpha = self._mut_prop_ratio(self._frozen_ln_like_fn,
                                              current_chain.current_pos,
                                              prop_vector)
-                accept_bool = self.metropolis_accept(alpha)
-                if accept_bool:
-                    current_chain.append_sample(prop_vector)
-                    self.accepted_proposals += 1
+                if self.metropolis_accept(alpha):
+                    new_state = prop_vector
+                    self.n_accepted += 1
                 else:
-                    current_chain.append_sample(current_chain.current_pos)
-                self.total_proposals += 1
-                j += 1
+                    new_state = current_chain.current_pos
+                    self.n_rejected += 1
 
-    @property
-    def acceptance_fraction(self):
-        return self.accepted_proposals / self.total_proposals
+                # imediately update chain[i] or bank updates untill all chains complete proposals
+                if not delayed_accept:
+                    current_chain.append_sample(new_state)
+                else:
+                    banked_prop_array.append(new_state)
+                j += 1
+            if delayed_accept:
+                for i, current_chain in enumerate(self.am_chains):
+                    current_chain.append_sample(banked_prop_array[i])
+
 
     def param_est(self, n_burn):
         chain_slice = self.super_chain[n_burn:, :]
