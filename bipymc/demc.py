@@ -75,7 +75,7 @@ class DeMcMpi(DeMc):
         # Parallel DE-MC algo with emcee modification
         j = 0
         while j < int((n - self.n_chains) / self.comm.size):
-            flip_bool = np.random.choice([True, False], p=[.5,.5])
+            flip_bool = np.random.choice([True, False], p=[0.5, 0.5])
 
             # gather the latest state from all chains
             local_chain_state = self._get_local_chain_state()

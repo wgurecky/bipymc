@@ -44,6 +44,16 @@ Install and run examples:
     python setup.py develop --user
     python examples/ex_line_fit.py
 
+Optional parallel example:
+
+    pip install mpi4py
+
+Or
+
+    conda install mpi4py
+
+    mpirun -np 4 python examples/ex_para_fit.py
+
 
 Depends
 -------
@@ -51,6 +61,7 @@ Depends
 - python3.2+
 - numpy
 - scipy
+- mpi4py (optional for parallel DE-MC)
 - matplotlib (optional for plotting)
 - [corner](https://corner.readthedocs.io/en/latest/)  (optional for plotting)
 
