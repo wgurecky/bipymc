@@ -28,6 +28,12 @@ class DeMcMpi(DeMc):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1),
                                   global_id=c_id, mpi_comm=self.comm, mpi_rank=self.comm.rank))
 
+    def _get_local_chain_state(self):
+        local_chain_state = []
+        for i, local_chain in enumerate(self.am_chains):
+            local_chain_state.append(local_chain.current_pos)
+        return np.array(local_chain_state)
+
     def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
         self.local_n_accepted = 0
         self.local_n_rejected = 1
@@ -37,71 +43,86 @@ class DeMcMpi(DeMc):
         gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
         delayed_accept = kwargs.get("delayed_accept", True)
 
+
+        def update_chain_pool(current_chain, chain_pool):
+            # valid_pool_ids = np.delete(np.array(range(self.n_chains)), c_id)
+            valid_pool_ids =np.array(range(len(chain_pool)))
+            mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=2)
+            mut_a_chain_state = chain_pool[mut_chain_ids[0]]
+            mut_b_chain_state = chain_pool[mut_chain_ids[1]]
+
+            # generate proposal vector
+            prop_vector = gamma * (mut_a_chain_state - mut_b_chain_state)
+            prop_vector += current_chain.current_pos
+            prop_vector += McmcChain.var_ball(varepsilon * 1e-3, dim)
+
+            alpha = self._mut_prop_ratio(self._frozen_ln_like_fn,
+                                         current_chain.current_pos,
+                                         prop_vector)
+            if self.metropolis_accept(alpha):
+                new_state = prop_vector
+                self.local_n_accepted += 1
+            else:
+                new_state = current_chain.current_pos
+                self.local_n_rejected += 1
+
+            # imediately update chain[i]
+            current_chain.append_sample(new_state)
+
         # Init parallel chains
         self._init_chains(theta_0, varepsilon, **kwargs)
 
-        # Parallel DE-MC algo
+        # Parallel DE-MC algo with emcee modification
         j = 0
         while j < int((n - self.n_chains) / self.comm.size):
-            banked_prop_array = []
+            flip_bool = np.random.choice([True, False], p=[.5,.5])
 
             # gather the latest state from all chains
-            local_chain_state = []
-            for i, local_chain in enumerate(self.am_chains):
-                local_chain_state.append(local_chain.current_pos)
-            local_chain_state = np.array(local_chain_state)
+            local_chain_state = self._get_local_chain_state()
 
             # broadcast current chain state to everyone
             global_chain_state = np.zeros((self.n_chains, len(theta_0)))
-            self.comm.Allgatherv([local_chain_state, MPI.DOUBLE],  # send
+            self.comm.Allgather([local_chain_state, MPI.DOUBLE],  # send
                                 [global_chain_state, MPI.DOUBLE]) # recv
-            global_set = set([tuple(x) for x in global_chain_state])
-            local_set = set([tuple(x) for x in local_chain_state])
-            local_complement = np.array([x for x in global_set.difference(local_set)])
-            if np.random.choice([True, False], p=[0.1, 0.9]):
-                local_complement = np.array([x for x in global_set])
+            global_chain_a, global_chain_b = np.array_split(global_chain_state, 2)
+            global_chain_a_ids, global_chain_b_ids = \
+                    np.array_split(np.array(range(self.n_chains)), 2)
+            if flip_bool:
+                global_chain_a, global_chain_b = global_chain_b, global_chain_a
+                global_chain_a_ids, global_chain_b_ids = global_chain_b_ids, global_chain_a_ids
 
+            # update chain a
             for i, current_chain in enumerate(self.am_chains):
                 # current global chain id
                 c_id = current_chain.global_id
-
-                # generate a proposal vector
-                # randomly select chain pair from chain pool
-                if self.comm.Get_size() == 1:
-                    valid_pool_ids = np.delete(np.array(range(self.n_chains)), c_id)
-                    mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=2)
-                    mut_a_chain_state = global_chain_state[mut_chain_ids[0]]
-                    mut_b_chain_state = global_chain_state[mut_chain_ids[1]]
-                else:
-                    mut_chain_ids = \
-                            np.random.choice(range(len(local_complement)), replace=False, size=2)
-                    mut_a_chain_state = local_complement[mut_chain_ids[0]]
-                    mut_b_chain_state = local_complement[mut_chain_ids[1]]
-
-                # generate proposal vector
-                prop_vector = gamma * (mut_a_chain_state - mut_b_chain_state)
-                prop_vector += current_chain.current_pos
-                prop_vector += McmcChain.var_ball(varepsilon * 1e-3, dim)
-
-                alpha = self._mut_prop_ratio(self._frozen_ln_like_fn,
-                                             current_chain.current_pos,
-                                             prop_vector)
-                if self.metropolis_accept(alpha):
-                    new_state = prop_vector
-                    self.local_n_accepted += 1
-                else:
-                    new_state = current_chain.current_pos
-                    self.local_n_rejected += 1
-
-                # imediately update chain[i] or bank updates untill all chains complete proposals
-                if not delayed_accept:
-                    current_chain.append_sample(new_state)
-                else:
-                    banked_prop_array.append(new_state)
+                if c_id not in global_chain_a_ids:
+                    continue
                 j += 1
-            if delayed_accept:
-                for i, current_chain in enumerate(self.am_chains):
-                    current_chain.append_sample(banked_prop_array[i])
+                update_chain_pool(current_chain, global_chain_b)
+
+            # gather the latest state from all chains
+            local_chain_state = self._get_local_chain_state()
+
+            # broadcast current chain state to everyone
+            global_chain_state = np.zeros((self.n_chains, len(theta_0)))
+            self.comm.Allgather([local_chain_state, MPI.DOUBLE],  # send
+                                [global_chain_state, MPI.DOUBLE]) # recv
+            global_chain_a, global_chain_b = np.array_split(global_chain_state, 2)
+            global_chain_a_ids, global_chain_b_ids = \
+                    np.array_split(np.array(range(self.n_chains)), 2)
+            if flip_bool:
+                global_chain_a, global_chain_b = global_chain_b, global_chain_a
+                global_chain_a_ids, global_chain_b_ids = global_chain_b_ids, global_chain_a_ids
+
+            # update chain b
+            for i, current_chain in enumerate(self.am_chains):
+                # current global chain id
+                c_id = current_chain.global_id
+                if c_id not in global_chain_b_ids:
+                    continue
+                j += 1
+                update_chain_pool(current_chain, global_chain_a)
+
             self.comm.Barrier()
 
         # Global accept ratio
