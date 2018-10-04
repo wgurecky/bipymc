@@ -44,28 +44,39 @@ class DeMcMpi(DeMc):
         j = 0
         while j < int((n - self.n_chains) / self.comm.size):
             banked_prop_array = []
+
+            # gather the latest state from all chains
+            local_chain_state = []
+            for i, local_chain in enumerate(self.am_chains):
+                local_chain_state.append(local_chain.current_pos)
+            local_chain_state = np.array(local_chain_state)
+
+            # broadcast current chain state to everyone
+            global_chain_state = np.zeros((self.n_chains, len(theta_0)))
+            self.comm.Allgatherv([local_chain_state, MPI.DOUBLE],  # send
+                                [global_chain_state, MPI.DOUBLE]) # recv
+            global_set = set([tuple(x) for x in global_chain_state])
+            local_set = set([tuple(x) for x in local_chain_state])
+            local_complement = np.array([x for x in global_set.difference(local_set)])
+            if np.random.choice([True, False], p=[0.1, 0.9]):
+                local_complement = np.array([x for x in global_set])
+
             for i, current_chain in enumerate(self.am_chains):
                 # current global chain id
                 c_id = current_chain.global_id
 
-                # gather the latest state from all chains
-                local_chain_state = []
-                for i, local_chain in enumerate(self.am_chains):
-                    local_chain_state.append(local_chain.current_pos)
-                local_chain_state = np.array(local_chain_state)
-
-                # broadcast current chain state to everyone
-                global_chain_state = np.zeros((self.n_chains, len(theta_0)))
-                self.comm.Allgather([local_chain_state, MPI.DOUBLE],  # send
-                                    [global_chain_state, MPI.DOUBLE]) # recv
-
                 # generate a proposal vector
                 # randomly select chain pair from chain pool
-                valid_pool_ids = np.delete(np.array(range(self.n_chains)), c_id)
-                mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=2)
-
-                mut_a_chain_state = global_chain_state[mut_chain_ids[0]]
-                mut_b_chain_state = global_chain_state[mut_chain_ids[1]]
+                if self.comm.Get_size() == 1:
+                    valid_pool_ids = np.delete(np.array(range(self.n_chains)), c_id)
+                    mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=2)
+                    mut_a_chain_state = global_chain_state[mut_chain_ids[0]]
+                    mut_b_chain_state = global_chain_state[mut_chain_ids[1]]
+                else:
+                    mut_chain_ids = \
+                            np.random.choice(range(len(local_complement)), replace=False, size=2)
+                    mut_a_chain_state = local_complement[mut_chain_ids[0]]
+                    mut_b_chain_state = local_complement[mut_chain_ids[1]]
 
                 # generate proposal vector
                 prop_vector = gamma * (mut_a_chain_state - mut_b_chain_state)
