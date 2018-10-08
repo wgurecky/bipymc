@@ -68,40 +68,14 @@ def fit_line(mcmc_algo, comm):
                 - np.log(1./sigma)) + log_prior(theta))
         return log_like
 
-    # === EXAMPLE 1 ===
-    if comm.rank == 0: print("========== FIT LIN MODEL 1 ===========")
-    theta_0 = np.array([4.0, -0.5])
-    my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*10, mpi_comm=comm,
-                      inflate=1e1, ln_kwargs={'data': y})
-    my_mcmc.run_mcmc(500 * 100)
-
-    # view results
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=10000)
-    theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
-    if comm.rank == 0:
-        print("Esimated params: %s" % str(theta_est))
-        print("Estimated params sigma: %s " % str(sig_est))
-        print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
-        # vis the parameter estimates
-        mc_plot.plot_mcmc_params(chain,
-                labels=["$y_0$", "m"],
-                savefig='line_mcmc_ex.png',
-                truths=[4.294, -0.9594])
-        # vis the full chain
-        mc_plot.plot_mcmc_chain(full_chain,
-                labels=["$y_0$", "m"],
-                savefig='lin_chain_ex.png',
-                truths=[4.294, -0.9594])
-
-
-    # === EXAMPLE 2 ===
     comm.Barrier()
-    if comm.rank == 0: print("========== FIT LIN MODEL 2 ===========")
+    if comm.rank == 0: print("========== FIT LIN MODEL ===========")
     theta_0 = np.array([-0.8, 4.5, 0.2])
     my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
-                      ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
+                      ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1,
+                      checkpoint=1000, h5_file="sampler_checkpoint_ex.h5")
     my_mcmc.run_mcmc(500 * 100)
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=10000)
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=15000)
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
     if comm.rank == 0:
         print("Esimated params: %s" % str(theta_est))
@@ -136,17 +110,25 @@ def sample_gauss(mcmc_algo, comm):
 
     if comm.rank == 0: print("========== SAMPLE GAUSSI ===========")
     theta_0 = np.array([1.0])
-    my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*4, mpi_comm=comm)
-    my_mcmc.run_mcmc(4000)
+    h5_file = "gauss_fit_ex_2000.h5"
+    mcmc_1 = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*4, mpi_comm=comm)
+
+    # run for 2000 samples then save chain state
+    mcmc_1.run_mcmc(2000)
+    mcmc_1.save_state(h5_file)
+
+    # load mcmc sampler state from file and continue running for 2000 more samples
+    mcmc_2 = DeMcMpi(log_like_fn, n_chains=comm.size*4, mpi_comm=comm, warm_start=True, h5_file=h5_file, dim=1)
+    mcmc_2.run_mcmc(2000)
 
     # view results
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=1000)
-    theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
+    theta_est, sig_est, chain = mcmc_2.param_est(n_burn=1000)
+    theta_est_, sig_est_, full_chain = mcmc_2.param_est(n_burn=0)
 
     if comm.rank == 0:
         print("Esimated mu: %s" % str(theta_est))
         print("Estimated sigma: %s " % str(sig_est))
-        print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
+        print("Acceptance fraction: %f" % mcmc_2.acceptance_fraction)
         sys.stdout.flush()
         # vis the parameter estimates
         mc_plot.plot_mcmc_params(chain, ["$\mu$"], savefig='gauss_mu_mcmc_ex.png', truths=[5.0])
