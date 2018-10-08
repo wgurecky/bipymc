@@ -75,7 +75,7 @@ def fit_line(mcmc_algo, comm):
                       ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1,
                       checkpoint=1000, h5_file="sampler_checkpoint_ex.h5")
     my_mcmc.run_mcmc(500 * 100)
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=15000)
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=10000)
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
     if comm.rank == 0:
         print("Esimated params: %s" % str(theta_est))
@@ -90,6 +90,28 @@ def fit_line(mcmc_algo, comm):
         mc_plot.plot_mcmc_chain(full_chain,
                 labels=["m", "$y_0$", "$\mathrm{ln}(f)$"],
                 savefig='lin_chain_ex_2.png',
+                truths=[-0.9594, 4.294, np.log(f_true)])
+
+    if comm.rank == 0: print("========== WARM START FIT ===========")
+    mcmc_2 = DeMcMpi(lnprob, n_chains=comm.size*10, mpi_comm=comm,
+                      ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1,
+                      warm_start=True, h5_file="sampler_checkpoint_ex.h5", dim=3)
+    mcmc_2.run_mcmc(500 * 100)
+    theta_est, sig_est, chain = mcmc_2.param_est(n_burn=20000)
+    theta_est_, sig_est_, full_chain = mcmc_2.param_est(n_burn=0)
+    if comm.rank == 0:
+        print("Esimated params: %s" % str(theta_est))
+        print("Estimated params sigma: %s " % str(sig_est))
+        print("Acceptance fraction: %f" % mcmc_2.acceptance_fraction)
+        # vis the parameter estimates
+        mc_plot.plot_mcmc_params(chain,
+                labels=["m", "$y_0$", "$\mathrm{ln}(f)$"],
+                savefig='line_mcmc_ex_3.png',
+                truths=[-0.9594, 4.294, np.log(f_true)])
+        # vis the full chain
+        mc_plot.plot_mcmc_chain(full_chain,
+                labels=["m", "$y_0$", "$\mathrm{ln}(f)$"],
+                savefig='lin_chain_ex_3.png',
                 truths=[-0.9594, 4.294, np.log(f_true)])
 
 
