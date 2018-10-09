@@ -1,3 +1,6 @@
+from __future__ import print_function, division
+from six import iteritems
+import numpy as np
 from bipymc.samplers import *
 from mpi4py import MPI
 import sys
@@ -10,21 +13,48 @@ class DeMcMpi(DeMc):
     For very cheep liklihood functions the communication overhead might
     reduce overall performance.
     """
-    def __init__(self, ln_like_fn, n_chains=8, mpi_comm=MPI.COMM_WORLD):
+    def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8, mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
         self.comm = mpi_comm
         self.local_n_accepted = 0
         self.local_n_rejected = 1
+        if theta_0 is not None:
+            self.dim = len(np.asarray(theta_0))
+        else:
+            self.dim = kwargs.get("dim", 1)
+        self.h5_file = kwargs.get("h5_file", "sampler_checkpoint.h5")
+        self.warm_start = kwargs.get("warm_start", False)
+        self.checkpoint = kwargs.get("checkpoint", 0)
         super(DeMcMpi, self).__init__(ln_like_fn, n_chains)
+        # check signature of ln_like_fn
+        try:
+            self._init_ln_like_fn(ln_kwargs)
+        except:
+            err_str = "Cannot evaluate ln_like_fn.  Signature must be ln_like_fn(theta, **kwargs)"
+            raise RuntimeError("ERROR: " + err_str)
+        if not self.warm_start:
+            self.init_chains(theta_0, varepsilon, **kwargs)
+        else:
+            self.init_warmstart_chain(self.h5_file)
 
-    def _init_chains(self, theta_0, varepsilon=1e-6, **kwargs):
-        # initilize chains
+
+    def init_chains(self, theta_0, varepsilon=1e-6, **kwargs):
+        """!
+        @brief Initilize chains from new theta_0 guess
+        """
         # distribute chains evenly amoungst the proc ranks
         rank_chain_ids = np.array_split(np.array(range(self.n_chains)), self.comm.size)[self.comm.rank]
         self.rank_chain_ids = rank_chain_ids
         self.am_chains = []
         for i, c_id in enumerate(self.rank_chain_ids):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1),
-                                  global_id=c_id, mpi_comm=self.comm, mpi_rank=self.comm.rank))
+                                  global_id=int(c_id), mpi_comm=self.comm, mpi_rank=self.comm.rank))
+
+    def init_warmstart_chain(self, h5_file):
+        """!
+        @brief Read chain pool from file
+        """
+        self.init_chains(np.zeros(self.dim))
+        self.load_state(h5_file)
 
     def _get_local_chain_state(self):
         local_chain_state = []
@@ -32,18 +62,24 @@ class DeMcMpi(DeMc):
             local_chain_state.append(local_chain.current_pos)
         return np.array(local_chain_state)
 
-    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
+
+    def run_mcmc(self, n, **kwargs):
+        self._mcmc_run(n, **kwargs)
+
+    def _mcmc_run(self, n, **kwargs):
+        # ensure chains are initilized
+        if not self.am_chains:
+            raise RuntimeError("ERROR: chains not initilized")
         self.local_n_accepted = 0
         self.local_n_rejected = 1
-        self._init_ln_like_fn(ln_kwargs)
-        # params for DE-MC algo
+        theta_0 = self.am_chains[0].current_pos
         dim = len(theta_0)
+        # demc proposal settings
         gamma_base = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
-        # control for chain shuffle logic.
         flip_prob = kwargs.get("flip", 0.1)
         flip_prob = np.clip(flip_prob, 0.0, 1.0)
         shuffle = kwargs.get("shuffle", True)
-
+        epsilon = kwargs.get("epsilon", 1e-6)
 
         def update_chain_pool(k, c_id, current_chain, prop_chain_pool, prop_chain_pool_ids):
             """!
@@ -72,7 +108,7 @@ class DeMcMpi(DeMc):
             # Generate proposal vector
             prop_vector = gamma * (mut_a_chain_state - mut_b_chain_state)
             prop_vector += current_chain.current_pos
-            prop_vector += McmcChain.var_ball(varepsilon * 1e-3, dim)
+            prop_vector += McmcChain.var_ball(epsilon, dim)
 
             # Metropolis ratio
             alpha = self._mut_prop_ratio(self._frozen_ln_like_fn,
@@ -88,11 +124,8 @@ class DeMcMpi(DeMc):
             # imediately update chain[i]
             current_chain.append_sample(new_state)
 
-        # Init parallel chains
-        self._init_chains(theta_0, varepsilon, **kwargs)
-
         # Parallel DE-MC algo with emcee modification
-        j, k = 0, 0
+        j, k_gen = 0, 0
         while j < int((n - self.n_chains) / self.comm.size):
             # chance to flib a/b chain groups
             flip_bool = np.random.choice([True, False], p=[flip_prob, 1 - flip_prob])
@@ -106,7 +139,7 @@ class DeMcMpi(DeMc):
             local_chain_state = self._get_local_chain_state()
 
             # broadcast current chain state to everyone
-            global_chain_state = np.zeros((self.n_chains, len(theta_0)))
+            global_chain_state = np.zeros((self.n_chains, dim))
             self.comm.Allgather([local_chain_state, MPI.DOUBLE],  # send
                                 [global_chain_state, MPI.DOUBLE]) # recv
             global_chain_a, global_chain_b = np.array_split(global_chain_state[shuffle_idx], 2)
@@ -129,7 +162,7 @@ class DeMcMpi(DeMc):
             local_chain_state = self._get_local_chain_state()
 
             # broadcast current chain state to everyone
-            global_chain_state = np.zeros((self.n_chains, len(theta_0)))
+            global_chain_state = np.zeros((self.n_chains, dim))
             self.comm.Allgather([local_chain_state, MPI.DOUBLE],  # send
                                 [global_chain_state, MPI.DOUBLE]) # recv
             global_chain_a, global_chain_b = np.array_split(global_chain_state[shuffle_idx], 2)
@@ -147,8 +180,14 @@ class DeMcMpi(DeMc):
                     continue
                 j += 1
                 update_chain_pool(j, c_id, current_chain, global_chain_a, global_chain_a_ids)
-            k += 1
+            # update number of generations
+            k_gen += 1
             self.comm.Barrier()
+
+            # checkpoint the chains
+            if self.checkpoint > 0:
+                if k_gen % self.checkpoint == 0:
+                    self.save_state(self.h5_file)
 
         # Global accept ratio
         recbuf_n_accepted = np.zeros(self.comm.Get_size(), dtype=int)
@@ -159,6 +198,43 @@ class DeMcMpi(DeMc):
                             [recbuf_n_rejected, MPI.INT])
         self.n_accepted = np.sum(recbuf_n_accepted)
         self.n_rejected = np.sum(recbuf_n_rejected)
+        self.comm.Barrier()
+
+    def save_state(self, h5_file=""):
+        """!
+        @brief Write chains to H5file.
+        Loop over all local chains and write chain state to h5
+        Collect all chains to the root process.  This ensures that only the
+        root process writes to the HDF5 file so this method works even if hdf5
+        was not configured with parallel write enabled.
+        """
+        if not h5_file:
+            h5_file = self.h5_file
+        if self.comm.rank == 0:
+            h5f = h5py.File(h5_file, "w")
+        for chain in self.gather_all_chains(0):
+            if self.comm.rank == 0:
+                chain.write_chain_h5(h5f)
+        if self.comm.rank == 0:
+            h5f.close()
+        self.comm.Barrier()
+
+    def load_state(self, h5_file=""):
+        """!
+        @brief Loads chains from H5file.
+        """
+        if not h5_file:
+            h5_file = self.h5_file
+        # collective read operation
+        with h5py.File(h5_file, 'r') as h5f:
+            for chain in self.am_chains:
+                chain.read_chain_h5(h5f)
+        # all read number of generations
+        k_gen = len(self.am_chains[0].chain)
+        # ensure all chains have equal length
+        for chain in self.am_chains:
+            if len(chain.chain) != k_gen:
+                raise RuntimeError
         self.comm.Barrier()
 
     def param_est(self, n_burn, collection_rank=0):
