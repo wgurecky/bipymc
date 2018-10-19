@@ -13,7 +13,8 @@ class DeMcMpi(DeMc):
     For very cheep liklihood functions the communication overhead might
     reduce overall performance.
     """
-    def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8, mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
+    def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8,
+                 mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
         self.comm = mpi_comm
         self.local_n_accepted = 0
         self.local_n_rejected = 1

@@ -5,8 +5,8 @@ import scipy.stats as stats
 
 
 class McmcProposal(object):
-    def __init__(self):
-        pass
+    def __init__(self, frozen_ln_like_fn):
+        self._frozen_ln_like_fn = frozen_ln_like_fn
 
     def update_proposal_cov(self):
         raise NotImplementedError
@@ -19,7 +19,7 @@ class McmcProposal(object):
 
 
 class GaussianProposal(McmcProposal):
-    def __init__(self, mu=None, cov=None):
+    def __init__(self, frozen_ln_like_fn, mu=None, cov=None):
         """!
         @brief Init
         @param mu  np_1darray. centroid of multi-dim gauss
@@ -28,7 +28,7 @@ class GaussianProposal(McmcProposal):
         self._cov_init = False
         self._mu = mu
         self._cov = cov
-        super(GaussianProposal, self).__init__()
+        super(GaussianProposal, self).__init__(frozen_ln_like_fn)
 
     def update_proposal_cov(self, past_samples, rescale=0, verbose=0):
         """!
@@ -66,7 +66,7 @@ class GaussianProposal(McmcProposal):
         assert self.cov is not None
         return np.random.multivariate_normal(self.mu, self.cov, size=n_samples)[0]
 
-    def prob_ratio(self, ln_like_fn, theta_past, theta_proposed):
+    def prob_ratio(self, theta_past, theta_proposed):
         """!
         @brief evaluate probability ratio:
         \f[
@@ -75,9 +75,9 @@ class GaussianProposal(McmcProposal):
         Where \f$ g() \f$ is the proposal distribution fn
         and \f[ \Pi \f] is the likelyhood function
         """
-        return np.exp(self.ln_prob_ratio(ln_like_fn, theta_past, theta_proposed))
+        return np.exp(self.ln_prob_ratio(theta_past, theta_proposed))
 
-    def ln_prob_ratio(self, ln_like_fn, theta_past, theta_proposed):
+    def ln_prob_ratio(self, theta_past, theta_proposed):
         """!
         @brief evaluate log of probability ratio
         \f[
@@ -93,10 +93,22 @@ class GaussianProposal(McmcProposal):
             stats.multivariate_normal.pdf(x_1, mean=theta_proposed, cov=self.cov)
         g_r = g_ratio(theta_proposed, theta_past)  # should be 1 in symmetric case
         assert g_r == 0
-        past_likelihood = ln_like_fn(theta_past)
-        proposed_likelihood = ln_like_fn(theta_proposed)
+        past_likelihood = self.ln_like_fn(theta_past)
+        proposed_likelihood = self.ln_like_fn(theta_proposed)
         return proposed_likelihood - past_likelihood + g_r
 
+    @property
+    def frozen_ln_like_fn(self):
+        return self._frozen_ln_like_fn
+
+    def ln_like_fn(self, args):
+        return self._frozen_ln_like_fn(args)
+
+    @frozen_ln_like_fn.setter
+    def frozen_ln_like_fn(self, fn):
+        # assert that function sig is fn(theta)
+        # where theta is a _list_ of fn args
+        self._frozen_ln_like_fn = fn
 
     @property
     def mu(self):
