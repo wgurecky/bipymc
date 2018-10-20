@@ -97,6 +97,19 @@ class GaussianProposal(McmcProposal):
         proposed_likelihood = self.ln_like_fn(theta_proposed)
         return proposed_likelihood - past_likelihood + g_r
 
+    def ln_prob_prop_ratio(self, thata_past, theta_proposed):
+        """!
+        @brief Evaluates natural log of proposal ratio only
+        """
+        assert self.mu is not None
+        assert self.cov is not None
+        g_ratio = lambda x_0, x_1: \
+            stats.multivariate_normal.pdf(x_0, mean=theta_past, cov=self.cov) - \
+            stats.multivariate_normal.pdf(x_1, mean=theta_proposed, cov=self.cov)
+        g_r = g_ratio(theta_proposed, theta_past)  # should be 1 in symmetric case
+        return g_r
+
+
     @property
     def frozen_ln_like_fn(self):
         return self._frozen_ln_like_fn
