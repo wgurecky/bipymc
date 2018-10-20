@@ -22,8 +22,8 @@ class McmcSampler(object):
         self.am_chains = []
         self.log_like_fn = log_like_fn
         if proposal == 'Gauss':
-            frozen_ln_like_fn = self._freeze_ln_like_fn(**ln_kwargs)
-            self.mcmc_proposal = GaussianProposal(frozen_ln_like_fn, proposal_kwargs)
+            self._freeze_ln_like_fn(**ln_kwargs)
+            self.mcmc_proposal = GaussianProposal(self.frozen_ln_like_fn, proposal_kwargs)
         else:
             raise RuntimeError("ERROR: proposal type: %s not supported." % str(proposal))
         self.n_accepted = 1
@@ -34,7 +34,7 @@ class McmcSampler(object):
 
     def _freeze_ln_like_fn(self, **kwargs):
         """!
-        @brief Freezes the likelyhood function.
+        @brief Freezes the likelihood function.
         the log_like_fn should have signature:
             self.log_like_fn(theta, data=np.array([...]), **kwargs)
             and must return the log likelyhood
@@ -43,14 +43,14 @@ class McmcSampler(object):
 
     @property
     def frozen_ln_like_fn(self):
-        return self._freeze_ln_like_fn
+        return self._frozen_ln_like_fn
 
     def param_est(self, n_burn):
         """!
         @brief Computes mean an std of sample chain discarding the first n_burn samples.
         @return  mean (np_1darray), std (np_1darray), chain (np_ndarray)
         """
-        chain_slice = self.chain[n_burn:, :]
+        chain_slice = self.chain.chain[n_burn:, :]
         mean_theta = np.mean(chain_slice, axis=0)
         std_theta = np.std(chain_slice, axis=0)
         return mean_theta, std_theta, chain_slice
@@ -80,7 +80,7 @@ class McmcSampler(object):
 
     @property
     def current_pos(self):
-        return self.chain.current_pos()
+        return self.chain.current_pos
 
 
 def mh_kernel(mcmc_proposal, theta_chain, i=-1, verbose=0):
@@ -114,7 +114,7 @@ def mh_kernel(mcmc_proposal, theta_chain, i=-1, verbose=0):
     """
     assert isinstance(mcmc_proposal, McmcProposal)
     # set the gaussian proposal to be centered at current loc
-    theta_current = theta_chain.current_pos()
+    theta_current = theta_chain.current_pos
     mcmc_proposal.mu = theta_current
 
     # gen random test value
@@ -191,8 +191,7 @@ class AdaptiveMetropolis(Metropolis):
     @brief Adaptive Metropolis Markov Chain Monte Carlo (MCMC) sampler.
     """
     def __init__(self, log_like_fn, ln_kwargs={}, **proposal_kwargs):
-        proposal = 'Gauss'
-        super(AdaptiveMetropolis, self).__init__(log_like_fn, ln_kwargs, proposal, **proposal_kwargs)
+        super(AdaptiveMetropolis, self).__init__(log_like_fn, ln_kwargs, **proposal_kwargs)
 
     def _mcmc_run(self, n, theta_0, cov_est=5.0, **kwargs):
         """!
@@ -230,7 +229,7 @@ class AdaptiveMetropolis(Metropolis):
             #    raise RuntimeError("lag must be smaller than adaptation start index")
             if i >= adapt and (i % lag_mod) == 0:
                 if verbose: print("  Updating proposal cov at sample index = %d" % i)
-                current_chain = self.chain[:i, :]
+                current_chain = self.chain.chain[:i, :]
                 self.mcmc_proposal.update_proposal_cov(current_chain[-lag:, :], verbose=verbose)
 
 
@@ -245,12 +244,12 @@ class DeMc(McmcSampler):
 
     TODO: Impl Sampler restarts.  Important for huge MCMC runs w/ crashes
     """
-    def __init__(self, log_like_fn, n_chains=8, **proposal_kwargs):
+    def __init__(self, log_like_fn, n_chains=8, ln_kwargs={}, **proposal_kwargs):
         assert n_chains >= 4
         self.n_chains = n_chains
         proposal = 'Gauss'
-        super(DeMc, self).__init__(log_like_fn, proposal, **proposal_kwargs)
-
+        super(DeMc, self).__init__(log_like_fn, proposal=proposal,
+                                   ln_kwargs=ln_kwargs, **proposal_kwargs)
 
     def _init_chains(self, theta_0, varepsilon=1e-6, **kwargs):
         # initilize chains
@@ -258,12 +257,7 @@ class DeMc(McmcSampler):
         for i in range(self.n_chains):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1)))
 
-    def _init_ln_like_fn(self, ln_kwargs={}):
-        self._freeze_ln_like_fn(**ln_kwargs)
-
-    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
-        # self._freeze_ln_like_fn(**ln_kwargs)
-        self._init_ln_like_fn(ln_kwargs)
+    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, **kwargs):
         # params for DE-MC algo
         dim = len(theta_0)
         gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))

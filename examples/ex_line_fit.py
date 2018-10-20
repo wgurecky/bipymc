@@ -70,12 +70,12 @@ def fit_line(mcmc_algo="DE-MC"):
     print("========== FIT LIN MODEL 1 ===========")
     theta_0 = np.array([4.0, -0.5])
     if mcmc_algo == "AM":
-        my_mcmc = AdaptiveMetropolis(log_like_fn)
+        my_mcmc = AdaptiveMetropolis(log_like_fn, ln_kwargs={'data': y})
     elif mcmc_algo == "Metropolis":
-        my_mcmc = Metropolis(log_like_fn)
+        my_mcmc = Metropolis(log_like_fn, ln_kwargs={'data': y})
     else:
-        my_mcmc = DeMc(log_like_fn, n_chains=50)
-    my_mcmc.run_mcmc(10000, theta_0, ln_kwargs={'data': y},
+        my_mcmc = DeMc(log_like_fn, n_chains=50, ln_kwargs={'data': y})
+    my_mcmc.run_mcmc(10000, theta_0,
                      cov_est=np.array([[0.2, -0.3], [-0.3, 0.01]]))
     # view results
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=4000)
@@ -99,13 +99,12 @@ def fit_line(mcmc_algo="DE-MC"):
     print("========== FIT LIN MODEL 2 ===========")
     theta_0 = np.array([-0.8, 4.5, 0.2])
     if mcmc_algo == "AM":
-        my_mcmc = AdaptiveMetropolis(lnprob)
+        my_mcmc = AdaptiveMetropolis(lnprob, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
     elif mcmc_algo == "Metropolis":
-        my_mcmc = Metropolis(lnprob)
+        my_mcmc = Metropolis(lnprob, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
     else:
-        my_mcmc = DeMc(lnprob, n_chains=50)
-    my_mcmc.run_mcmc(10000, theta_0, cov_est=np.eye(3) * 1e-3,
-                     ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
+        my_mcmc = DeMc(lnprob, n_chains=50, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
+    my_mcmc.run_mcmc(10000, theta_0, cov_est=np.eye(3) * 1e-3, inflate=1e1)
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=6000)
     print("Esimated params: %s" % str(theta_est))
     print("Estimated params sigma: %s " % str(sig_est))
@@ -159,5 +158,5 @@ def sample_gauss(mcmc_algo="DE-MC"):
 
 
 if __name__ == "__main__":
-    sample_gauss("DE-MC")
-    fit_line("DE-MC")
+    sample_gauss("AM")
+    fit_line("AM")
