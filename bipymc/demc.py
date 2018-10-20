@@ -8,10 +8,7 @@ import sys
 
 class DeMcMpi(DeMc):
     """!
-    @brief Parallel impl of DE-MC algo using mpi4py
-    This method works well when the liklihood function is expensive to update.
-    For very cheep liklihood functions the communication overhead might
-    reduce overall performance.
+    @brief Parallel impl of DE-MC algo using mpi4py.
     """
     def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8,
                  mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
@@ -25,13 +22,7 @@ class DeMcMpi(DeMc):
         self.h5_file = kwargs.get("h5_file", "sampler_checkpoint.h5")
         self.warm_start = kwargs.get("warm_start", False)
         self.checkpoint = kwargs.get("checkpoint", 0)
-        super(DeMcMpi, self).__init__(ln_like_fn, n_chains)
-        # check signature of ln_like_fn
-        try:
-            self._init_ln_like_fn(ln_kwargs)
-        except:
-            err_str = "Cannot evaluate ln_like_fn.  Signature must be ln_like_fn(theta, **kwargs)"
-            raise RuntimeError("ERROR: " + err_str)
+        super(DeMcMpi, self).__init__(ln_like_fn, n_chains, ln_kwargs=ln_kwargs)
         if not self.warm_start:
             self.init_chains(theta_0, varepsilon, **kwargs)
         else:
