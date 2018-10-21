@@ -53,6 +53,7 @@ def dr_kernel(mcmc_proposal, theta_chain, i=-1, verbose=0):
             n_accepted = 1
             n_rejected = 0
             theta_new = dr_prop
+            print("Accepted DR chain prop!")
         else:
             n_rejected = 1
             n_accepted = 0
@@ -70,10 +71,13 @@ def dr_chain_step(mcmc_proposal, mh_ln_p_ratio, dr_theta_chain,
            rejection chain
     @param
     """
+    theta_new = None
     # update the proposal distribution so that the mean
     # of the proposal is equal to the mean of the last n failed steps
     mcmc_proposal.mu = np.mean(dr_theta_chain.chain, axis=0)
-    # TODO: update covarience of proposal too?
+
+    # shrink the proposal density cov
+    mcmc_proposal.cov = mcmc_proposal.cov * 0.2
 
     # gen random test value
     a_test = np.random.uniform(0, 1, size=1)
@@ -86,107 +90,71 @@ def dr_chain_step(mcmc_proposal, mh_ln_p_ratio, dr_theta_chain,
             dr_theta_chain.current_pos, dr_theta_prop)
 
     # add new natural log of proposal ratio to past ln prop ratio
+    print("==================")
+    print("depth", current_depth)
+    print("theta_0", dr_theta_chain.current_pos, "theta_new", dr_theta_prop)
+    print("init_ln_p_ratio", mh_ln_p_ratio)
     dr_ln_p_ratio = mh_ln_p_ratio + dr_p_ratio
 
     # do standard metropolis accept/reject with updated ratio
     a_ratio = np.min((1, np.exp(dr_ln_p_ratio)))
 
+    print("dr_ln_p_ratio", dr_ln_p_ratio)
+    print("==================")
+
     if a_ratio >= 1.:
-        theta_new = theta_prop
+        theta_new = dr_theta_prop
         return theta_new
     elif a_test < a_ratio:
-        theta_new = theta_prop
+        theta_new = dr_theta_prop
         return theta_new
     elif current_depth >= max_depth:
         return None  # we failed all dealyed rejection attemts
     else:
+        # recurse: step the dr chain again
+        # recurse: run the dr chain
         current_depth += 1
         dr_theta_chain.append_sample(dr_theta_prop)
-        # recurse: run the dr chain
-        dr_chain(mcmc_proposal, dr_ln_p_ratio, dr_theta_chain,
-                 current_depth, max_depth)
+        dr_chain_step(mcmc_proposal, dr_ln_p_ratio, dr_theta_chain,
+                      current_depth, max_depth)
+    if theta_new:
+        return theta_new
+    else:
+        return None
 
 
-
-class DrChain(object):
+class DrMetropolis(Metropolis):
     """!
-    @brief Delayed rejection chain.
+    @brief Delayed rejection Metropolis Markov Chain Monte Carlo (MCMC) sampler.
+    Proposal distribution is gaussian and symetric
     """
-    def __init__(self, ln_like_fn, **kwargs):
-        self.current_depth = 1
-        self.dr_sample_chain = []
-        self.dr_prop_chain = []
-        self.max_depth = kwargs.get("max_depth", 5)
-        self.ln_like_fn = ln_like_fn
+    def __init__(self, log_like_fn, ln_kwargs={}, **proposal_kwargs):
+        super(DrMetropolis, self).__init__(log_like_fn, ln_kwargs, **proposal_kwargs)
 
-    def run_dr_chain(self, dr_seed_chain, prop_base_cov):
+    def _init_chains(self, theta_0, **kwargs):
+        self.am_chains = [McmcChain(theta_0, varepsilon=kwargs.get("varepsilon", 1e-12))]
+
+    def _mcmc_run(self, n, theta_0, cov_est=5.0, **kwargs):
         """!
-        Run the delayed rejection (DR) chain.  break
-        early if we happen to accept a sample.
-        @prop_base_cov  covarience of the base MCMC proposal
+        @brief Run the metropolis algorithm.
+        @param n  int. number of samples to draw.
+        @param theta_0 np_1darray. initial guess for parameters.
+        @param cov_est float or np_1darray.  Initial guess of anticipated theta variance.
+            strongly recommended to specify, but is optional.
         """
-        assert len(dr_seed_chain) == 2
-        #param lambda_0 original location of MCMC chain before DR
-        #param beta_0 proposed, but rejected sample from original MCMC chain before DR
-        lambda_0 = dr_seed_chain[0]
-        beta_1 = dr_seed_chain[1]
-        self.dr_sample_chain = deepcopy(dr_seed_chain)
+        verbose = kwargs.get("verbose", 0)
+        # pre alloc storage for solution
+        self.n_accepted = 1
+        self.n_rejected = 0
 
-        for i in range(self.max_depth):
-            depth = i + 1
-            # get a proposal density distribution based on all previous
-            # samples in the dr chain.
-            self.dr_prop_chain.append(DrGaussianProposal(self.ln_like_fn,
-                                      prop_base_cov))
-            new_prop_dist = self.dr_prop_chain[-1]._wrapped_mv_gausasin(dr_sample_chain)
-            # sample the proposal density distribution
-        pass
+        # initilize chain
+        self._init_chains(theta_0, varepsilon=kwargs.get("varepsilon", 1e-12))
 
-class DrGaussianProposal(McmcProposal):
-    """!
-    @brief Delayed rejection gaussian proposal chain
-    with proposal shrinkage.  The proposal density of a DR chain
-    is updated with knowlege of other past proposed steps in the DR chain.
-    """
-    def __init__(self, ln_like_fn, base_cov):
-        self.ln_like_fn = ln_like_fn
-        self.depth = 1
-        self.cov_base = base_cov
-        super(DrGaussianProposal, self).__init__()
-
-    def multi_stage_proposal_dist(self, prop_lambda, prop_past_beta):
-        """!
-        @brief Compute
-        \beta_i \sim g_i(\beta_i | \lambda, \beta_1, ... \beta_{i-1})
-        """
-        pass
-
-    def prob_ratio(self, *args, **kwargs):
-        return np.exp(self.ln_prob_ratio(*args, **kwargs))
-
-    def ln_prob_ratio(self, *args, **kwargs):
-        pass
-
-    def _ln_likelihood_ratio(self, beta_past, beta_proposed):
-        past_likelihood = self.ln_like_fn(beta_past)
-        proposed_likelihood = self.ln_like_fn(beta_proposed)
-        return proposed_likelihood - past_likelihood
-
-    def _ln_proposal_ratio(self, beta_proposal, beta_dr_list):
-        beta_dr_list= []
-        numerator = ()
-        pass
-
-    def _wrapped_mv_gausasin(self, beta_dr_list):
-        shrinkage_array = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
-        mu = np.mean(beta_dr_list)
-        cov = self.cov_base  * shrinkage_array[len(beta_dr_list)]
-        return stats.multivariate_normal(mean=mu, cov=cov)
-
-    def _sample_wrapped_mv_gaussian(self, n):
-        pass
-
-    def _ln_acceptance_ratio(self):
-        pass
-
-
+        self.mcmc_proposal.cov = np.eye(len(theta_0)) * cov_est
+        for i in range(n - 1):
+            # M-H Kernel
+            theta_new, n_accepted, n_rejected = \
+                dr_kernel(self.mcmc_proposal, self.chain, verbose=verbose)
+            self.n_accepted += n_accepted
+            self.n_rejected += n_rejected
+            self.chain.append_sample(theta_new)
