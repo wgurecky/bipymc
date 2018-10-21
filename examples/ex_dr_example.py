@@ -10,7 +10,7 @@ except:
     sys.path.append('../.')
     from bipymc.mc_plot import mc_plot
     from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
-    from bipymc.dram import DrMetropolis
+    from bipymc.dram import DrMetropolis, Dram
 
 
 def fit_line(mcmc_algo="DE-MC"):
@@ -75,7 +75,7 @@ def fit_line(mcmc_algo="DE-MC"):
     elif mcmc_algo == "Metropolis":
         my_mcmc = Metropolis(log_like_fn, ln_kwargs={'data': y})
     elif mcmc_algo == "DRM":
-        my_mcmc = DrMetropolis(log_like_fn, ln_kwargs={'data': y})
+        my_mcmc = Dram(log_like_fn, ln_kwargs={'data': y})
     else:
         my_mcmc = DeMc(log_like_fn, n_chains=50, ln_kwargs={'data': y})
     my_mcmc.run_mcmc(10000, theta_0,
@@ -106,8 +106,7 @@ def fit_line(mcmc_algo="DE-MC"):
     elif mcmc_algo == "Metropolis":
         my_mcmc = Metropolis(lnprob, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
     elif mcmc_algo == "DRM":
-        my_mcmc = DrMetropolis(lnprob, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
-        # my_mcmc = DrMetropolis(log_like_fn, ln_kwargs={'data': y})
+        my_mcmc = Dram(lnprob, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
     else:
         my_mcmc = DeMc(lnprob, n_chains=50, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
     my_mcmc.run_mcmc(10000, theta_0, cov_est=np.eye(3) * 1e-3, inflate=1e1)
@@ -149,7 +148,7 @@ def sample_gauss(mcmc_algo="DE-MC"):
     elif mcmc_algo == "Metropolis":
         my_mcmc = Metropolis(log_like_fn)
     elif mcmc_algo == "DRM":
-        my_mcmc = DrMetropolis(log_like_fn)
+        my_mcmc = Dram(log_like_fn)
     else:
         my_mcmc = DeMc(log_like_fn)
     my_mcmc.run_mcmc(4000, theta_0, data=[0, 0, 0], cov_est=1.0)
