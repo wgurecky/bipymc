@@ -106,7 +106,8 @@ def fit_line(mcmc_algo="DE-MC"):
     elif mcmc_algo == "Metropolis":
         my_mcmc = Metropolis(lnprob, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
     elif mcmc_algo == "DRM":
-        my_mcmc = DrMetropolis(log_like_fn, ln_kwargs={'data': y})
+        my_mcmc = DrMetropolis(lnprob, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
+        # my_mcmc = DrMetropolis(log_like_fn, ln_kwargs={'data': y})
     else:
         my_mcmc = DeMc(lnprob, n_chains=50, ln_kwargs={'x': x, 'y': y, 'yerr': yerr})
     my_mcmc.run_mcmc(10000, theta_0, cov_est=np.eye(3) * 1e-3, inflate=1e1)
@@ -166,4 +167,4 @@ def sample_gauss(mcmc_algo="DE-MC"):
 
 if __name__ == "__main__":
     sample_gauss("DRM")
-    # fit_line("DRM")
+    fit_line("DRM")

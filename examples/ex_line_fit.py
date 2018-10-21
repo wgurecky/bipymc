@@ -158,5 +158,5 @@ def sample_gauss(mcmc_algo="DE-MC"):
 
 
 if __name__ == "__main__":
-    sample_gauss("AM")
-    fit_line("AM")
+    sample_gauss("Metropolis")
+    fit_line("Metropolis")

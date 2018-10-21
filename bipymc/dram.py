@@ -26,6 +26,7 @@ def dr_kernel(mcmc_proposal, theta_chain, i=-1, verbose=0):
             theta_prop)
     a_ratio = np.min((1, p_ratio))
     n_rejected, n_accepted = 0, 0
+    n_dr_accept = 0
     if a_ratio >= 1.:
         # accept proposal, it is in area of higher prob density
         theta_new = theta_prop
@@ -48,20 +49,22 @@ def dr_kernel(mcmc_proposal, theta_chain, i=-1, verbose=0):
         dr_mcmc_theta_chain = McmcChain(theta_prop, varepsilon=1e-14)
 
         # run the delayed rejection chain
-        dr_prop = dr_chain_step(dr_mcmc_prop, np.log(p_ratio), dr_mcmc_theta_chain)
-        if dr_prop:
+        dr_prop = dr_chain_step(dr_mcmc_prop, np.log(p_ratio), dr_mcmc_theta_chain,
+                                theta_current, np.log(a_ratio))
+        if dr_prop is not None:
             n_accepted = 1
             n_rejected = 0
+            n_dr_accept += 1
             theta_new = dr_prop
             print("Accepted DR chain prop!")
         else:
             n_rejected = 1
             n_accepted = 0
             theta_new = theta_current
-    return theta_new, n_accepted, n_rejected
+    return theta_new, n_accepted, n_rejected, n_dr_accept
 
 
-def dr_chain_step(mcmc_proposal, mh_ln_p_ratio, dr_theta_chain,
+def dr_chain_step(mcmc_proposal, mh_ln_p_ratio, dr_theta_chain, theta_0, ln_alpha_prev,
              current_depth=0, max_depth=5, verbose=0):
     """!
     @brief delayed rejection chain
@@ -87,20 +90,27 @@ def dr_chain_step(mcmc_proposal, mh_ln_p_ratio, dr_theta_chain,
 
     # compute new log of proposal prob ratio
     dr_p_ratio = mcmc_proposal.ln_prob_prop_ratio( \
-            dr_theta_chain.current_pos, dr_theta_prop)
+            theta_0, dr_theta_prop)
 
     # add new natural log of proposal ratio to past ln prop ratio
     print("==================")
     print("depth", current_depth)
     print("theta_0", dr_theta_chain.current_pos, "theta_new", dr_theta_prop)
-    print("init_ln_p_ratio", mh_ln_p_ratio)
-    dr_ln_p_ratio = mh_ln_p_ratio + dr_p_ratio
+    dr_ln_p_ratio = mcmc_proposal.ln_prob_prop_ratio(dr_theta_chain.current_pos, dr_theta_prop)
 
     # do standard metropolis accept/reject with updated ratio
-    a_ratio = np.min((1, np.exp(dr_ln_p_ratio)))
+    # a_ratio = np.min((1, np.exp(dr_ln_p_ratio)))
 
     print("dr_ln_p_ratio", dr_ln_p_ratio)
     print("==================")
+
+    ln_alpha_current = np.log( np.min((1, np.exp(dr_ln_p_ratio))) )
+
+    # update alpha
+    alpha_ln_prod = np.log(1 - np.exp(ln_alpha_current)) - np.log(1. - np.exp(ln_alpha_prev))
+    ln_alpha_new = ln_alpha_prev + alpha_ln_prod
+
+    a_ratio = np.min((1, np.exp(dr_p_ratio + ln_alpha_new)))
 
     if a_ratio >= 1.:
         theta_new = dr_theta_prop
@@ -115,7 +125,7 @@ def dr_chain_step(mcmc_proposal, mh_ln_p_ratio, dr_theta_chain,
         # recurse: run the dr chain
         current_depth += 1
         dr_theta_chain.append_sample(dr_theta_prop)
-        dr_chain_step(mcmc_proposal, dr_ln_p_ratio, dr_theta_chain,
+        dr_chain_step(mcmc_proposal, dr_ln_p_ratio, dr_theta_chain, theta_0, ln_alpha_new,
                       current_depth, max_depth)
     if theta_new:
         return theta_new
@@ -146,6 +156,7 @@ class DrMetropolis(Metropolis):
         # pre alloc storage for solution
         self.n_accepted = 1
         self.n_rejected = 0
+        self.n_dr_accept = 0
 
         # initilize chain
         self._init_chains(theta_0, varepsilon=kwargs.get("varepsilon", 1e-12))
@@ -153,8 +164,11 @@ class DrMetropolis(Metropolis):
         self.mcmc_proposal.cov = np.eye(len(theta_0)) * cov_est
         for i in range(n - 1):
             # M-H Kernel
-            theta_new, n_accepted, n_rejected = \
+            theta_new, n_accepted, n_rejected, n_dr_accept = \
                 dr_kernel(self.mcmc_proposal, self.chain, verbose=verbose)
             self.n_accepted += n_accepted
             self.n_rejected += n_rejected
+            self.n_dr_accept += n_dr_accept
             self.chain.append_sample(theta_new)
+
+        print("n dr accept", self.n_dr_accept)
