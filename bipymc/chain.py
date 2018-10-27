@@ -112,6 +112,15 @@ class McmcChain(object):
         """
         pass
 
+    def __getitem__(self, get_index):
+        """!
+        @brief Support standard chain slicing
+        """
+        if isinstance(get_index, slice):
+            return self.chain[get_index]
+        else:
+            return self.chain[get_index, :]
+
     @property
     def chain(self):
         return self._chain

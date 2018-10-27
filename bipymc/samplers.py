@@ -12,38 +12,45 @@ class McmcSampler(object):
     Contains common methods for dealing with the likelyhood function
     and for obtaining parameter estimates from the mcmc chain.
     """
-    def __init__(self, log_like_fn, proposal, **proposal_kwargs):
+    def __init__(self, log_like_fn, ln_kwargs={}, proposal="Gauss", **proposal_kwargs):
         """!
         @brief setup mcmc sampler
         @param log_like_fn callable.  must return log likelyhood (float)
         @param proposal string.
         @param proposal_kwargs dict.
         """
+        self.am_chains = []
         self.log_like_fn = log_like_fn
         if proposal == 'Gauss':
-            self.mcmc_proposal = GaussianProposal(proposal_kwargs)
+            self._freeze_ln_like_fn(**ln_kwargs)
+            self.mcmc_proposal = GaussianProposal(self.frozen_ln_like_fn, proposal_kwargs)
         else:
             raise RuntimeError("ERROR: proposal type: %s not supported." % str(proposal))
-        self.chain = None
         self.n_accepted = 1
         self.n_rejected = 0
-        self.chain = None
+
+    def _init_chains(self, theta_0, **kwargs):
+        raise NotImplementedError
 
     def _freeze_ln_like_fn(self, **kwargs):
         """!
-        @brief Freezes the likelyhood function.
+        @brief Freezes the likelihood function.
         the log_like_fn should have signature:
             self.log_like_fn(theta, data=np.array([...]), **kwargs)
             and must return the log likelyhood
         """
         self._frozen_ln_like_fn = lambda theta: self.log_like_fn(theta, **kwargs)
 
+    @property
+    def frozen_ln_like_fn(self):
+        return self._frozen_ln_like_fn
+
     def param_est(self, n_burn):
         """!
         @brief Computes mean an std of sample chain discarding the first n_burn samples.
         @return  mean (np_1darray), std (np_1darray), chain (np_ndarray)
         """
-        chain_slice = self.chain[n_burn:, :]
+        chain_slice = self.chain.chain[n_burn:, :]
         mean_theta = np.mean(chain_slice, axis=0)
         std_theta = np.std(chain_slice, axis=0)
         return mean_theta, std_theta, chain_slice
@@ -61,6 +68,10 @@ class McmcSampler(object):
         raise NotImplementedError
 
     @property
+    def chain(self):
+        return self.am_chains[0]
+
+    @property
     def acceptance_fraction(self):
         """!
         @brief Ratio of accepted samples vs total samples
@@ -69,12 +80,14 @@ class McmcSampler(object):
 
     @property
     def current_pos(self):
-        return self.chain[-1, :]
+        return self.chain.current_pos
 
 
-def mh_kernel(i, mcmc_sampler, theta_chain, verbose=0):
+def mh_kernel(mcmc_proposal, theta_chain, i=-1, verbose=0):
     """!
-    @brief Metropolis-Hastings mcmc kernel.
+    @brief Metropolis-Hastings kernel.  Provides a new chain state
+    given previous chain state and properties of a proposal density distribution.
+
     The kernel, \f[ K \f], maps the pevious chain state, \f[ x \f],
     to the new chain state, \f[ x' \f].  In matrix form:
     \f[
@@ -93,39 +106,46 @@ def mh_kernel(i, mcmc_sampler, theta_chain, verbose=0):
     This means that a step in the chain is reversible.
     The goal in MCMC is to find \f[ K \f] that makes the state vector, \f[ x \f]
     become stationary at the desired distribution \f[ \Pi() \f]
-    @param i  int. Current chain index
-    @param mcmc_sampler McmcSampler instance
-    @param theta_chain  np_ndarray for sample storage
+    @param mcmc_proposl McmcProposal instance
+    @param theta_chain  mcmc chain instance
+    @param i  int. Index to use as current chain state
     @param verbose int or bool. default == 0 (optional)
+    @return (np_1darray of new chain state, accepted int, rejected int)
     """
-    theta = theta_chain[i, :]
+    assert isinstance(mcmc_proposal, McmcProposal)
     # set the gaussian proposal to be centered at current loc
-    mcmc_sampler.mcmc_proposal.mu = theta
+    theta_current = theta_chain.current_pos
+    mcmc_proposal.mu = theta_current
+
     # gen random test value
     a_test = np.random.uniform(0, 1, size=1)
+
     # propose a new place to go
-    theta_prop = mcmc_sampler.mcmc_proposal.sample_proposal()
+    theta_prop = mcmc_proposal.sample_proposal()
+
     # compute acceptance ratio
-    a_ratio = np.min((1, mcmc_sampler.mcmc_proposal.prob_ratio(
-        mcmc_sampler._frozen_ln_like_fn,
-        theta,
-        theta_prop)))
+    p_ratio = \
+        mcmc_proposal.prob_ratio(
+            theta_current,
+            theta_prop)
+    a_ratio = np.min((1, p_ratio))
+    n_rejected, n_accepted = 0, 0
     if a_ratio >= 1.:
         # accept proposal, it is in area of higher prob density
-        theta_chain[i+1, :] = theta_prop
-        mcmc_sampler.n_accepted += 1
+        theta_new = theta_prop
+        n_accepted = 1
         if verbose: print("Aratio: %f, Atest: %f , Accepted bc Aratio > 1" % (a_ratio, a_test))
     elif a_test < a_ratio:
         # accept proposal, even though it is "worse"
-        theta_chain[i+1, :] = theta_prop
-        mcmc_sampler.n_accepted += 1
+        theta_new = theta_prop
+        n_accepted = 1
         if verbose: print("Aratio: %f, Atest: %f , Accepted by chance" % (a_ratio, a_test))
     else:
         # stay put, reject proposal
-        theta_chain[i+1, :] = theta
-        mcmc_sampler.n_rejected += 1
+        theta_new = theta_current
+        n_rejected = 1
         if verbose: print("Aratio: %f, Atest: %f , Rejected!" % (a_ratio, a_test))
-    return theta_chain
+    return theta_new, n_accepted, n_rejected
 
 
 class Metropolis(McmcSampler):
@@ -133,11 +153,14 @@ class Metropolis(McmcSampler):
     @brief Metropolis Markov Chain Monte Carlo (MCMC) sampler.
     Proposal distribution is gaussian and symetric
     """
-    def __init__(self, log_like_fn, **proposal_kwargs):
+    def __init__(self, log_like_fn, ln_kwargs={}, **proposal_kwargs):
         proposal = 'Gauss'
-        super(Metropolis, self).__init__(log_like_fn, proposal, **proposal_kwargs)
+        super(Metropolis, self).__init__(log_like_fn, ln_kwargs, proposal, **proposal_kwargs)
 
-    def _mcmc_run(self, n, theta_0, cov_est=5.0, ln_kwargs={}, **kwargs):
+    def _init_chains(self, theta_0, **kwargs):
+        self.am_chains = [McmcChain(theta_0, varepsilon=kwargs.get("varepsilon", 1e-12))]
+
+    def _mcmc_run(self, n, theta_0, cov_est=5.0, **kwargs):
         """!
         @brief Run the metropolis algorithm.
         @param n  int. number of samples to draw.
@@ -146,31 +169,33 @@ class Metropolis(McmcSampler):
             strongly recommended to specify, but is optional.
         """
         verbose = kwargs.get("verbose", 0)
-        self._freeze_ln_like_fn(**ln_kwargs)
         # pre alloc storage for solution
         self.n_accepted = 1
         self.n_rejected = 0
-        theta_chain = np.zeros((n, np.size(theta_0)))
-        self.chain = theta_chain
-        theta_chain[0, :] = theta_0
+
+        # initilize chain
+        self._init_chains(theta_0, varepsilon=kwargs.get("varepsilon", 1e-12))
+
         self.mcmc_proposal.cov = np.eye(len(theta_0)) * cov_est
         for i in range(n - 1):
             # M-H Kernel
-            mh_kernel(i, self, theta_chain, verbose=verbose)
-        self.chain = theta_chain
+            theta_new, n_accepted, n_rejected = \
+                mh_kernel(self.mcmc_proposal, self.chain, verbose=verbose)
+            self.n_accepted += n_accepted
+            self.n_rejected += n_rejected
+            self.chain.append_sample(theta_new)
 
 
-class AdaptiveMetropolis(McmcSampler):
+class AdaptiveMetropolis(Metropolis):
     """!
-    @brief Metropolis Markov Chain Monte Carlo (MCMC) sampler.
+    @brief Adaptive Metropolis Markov Chain Monte Carlo (MCMC) sampler.
     """
-    def __init__(self, log_like_fn, **proposal_kwargs):
-        proposal = 'Gauss'
-        super(AdaptiveMetropolis, self).__init__(log_like_fn, proposal, **proposal_kwargs)
+    def __init__(self, log_like_fn, ln_kwargs={}, **proposal_kwargs):
+        super(AdaptiveMetropolis, self).__init__(log_like_fn, ln_kwargs, **proposal_kwargs)
 
-    def _mcmc_run(self, n, theta_0, cov_est=5.0, ln_kwargs={}, **kwargs):
+    def _mcmc_run(self, n, theta_0, cov_est=5.0, **kwargs):
         """!
-        @brief Run the metropolis algorithm.
+        @brief Run the adaptive metropolis algorithm.
         @param n  int. number of samples to draw.
         @param theta_0 np_1darray. initial guess for parameters.
         @param cov_est float or np_1darray.  Initial guess of anticipated theta variance.
@@ -184,25 +209,28 @@ class AdaptiveMetropolis(McmcSampler):
         adapt = kwargs.get("adapt", 1000)
         lag = kwargs.get("lag", 1000)
         lag_mod = kwargs.get("lag_mod", 100)
-        self._freeze_ln_like_fn(**ln_kwargs)
         # pre alloc storage for solution
         self.n_accepted = 1
         self.n_rejected = 0
-        theta_chain = np.zeros((n, np.size(theta_0)))
-        self.chain = theta_chain
-        theta_chain[0, :] = theta_0
+
+        # initilize chain
+        self._init_chains(theta_0, varepsilon=kwargs.get("varepsilon", 1e-12))
+
         self.mcmc_proposal.cov = np.eye(len(theta_0)) * cov_est
         for i in range(n - 1):
             # M-H Kernel
-            mh_kernel(i, self, theta_chain, verbose=verbose)
+            theta_new, n_accepted, n_rejected = \
+                mh_kernel(self.mcmc_proposal, self.chain, verbose=verbose)
+            self.chain.append_sample(theta_new)
+            self.n_accepted += n_accepted
+            self.n_rejected += n_rejected
             # continuously update the proposal distribution
             # if (lag > adapt):
             #    raise RuntimeError("lag must be smaller than adaptation start index")
             if i >= adapt and (i % lag_mod) == 0:
                 if verbose: print("  Updating proposal cov at sample index = %d" % i)
-                current_chain = theta_chain[:i, :]
+                current_chain = self.chain.chain[:i, :]
                 self.mcmc_proposal.update_proposal_cov(current_chain[-lag:, :], verbose=verbose)
-        self.chain = theta_chain
 
 
 class DeMc(McmcSampler):
@@ -216,12 +244,12 @@ class DeMc(McmcSampler):
 
     TODO: Impl Sampler restarts.  Important for huge MCMC runs w/ crashes
     """
-    def __init__(self, log_like_fn, n_chains=8, **proposal_kwargs):
+    def __init__(self, log_like_fn, n_chains=8, ln_kwargs={}, **proposal_kwargs):
         assert n_chains >= 4
         self.n_chains = n_chains
         proposal = 'Gauss'
-        super(DeMc, self).__init__(log_like_fn, proposal, **proposal_kwargs)
-
+        super(DeMc, self).__init__(log_like_fn, proposal=proposal,
+                                   ln_kwargs=ln_kwargs, **proposal_kwargs)
 
     def _init_chains(self, theta_0, varepsilon=1e-6, **kwargs):
         # initilize chains
@@ -229,12 +257,7 @@ class DeMc(McmcSampler):
         for i in range(self.n_chains):
             self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1)))
 
-    def _init_ln_like_fn(self, ln_kwargs={}):
-        self._freeze_ln_like_fn(**ln_kwargs)
-
-    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, ln_kwargs={}, **kwargs):
-        # self._freeze_ln_like_fn(**ln_kwargs)
-        self._init_ln_like_fn(ln_kwargs)
+    def _mcmc_run(self, n, theta_0, varepsilon=1e-6, **kwargs):
         # params for DE-MC algo
         dim = len(theta_0)
         gamma = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
