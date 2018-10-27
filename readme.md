@@ -16,6 +16,8 @@ Implemented Example MCMC Methods
 - Metropolis-Hastings
 - Adaptive Metropolis (AM)
 - Differential Evolution Metropolis (DE-MC)
+- Delayed Rejection Metropolis
+- Delayed Rejection Adaptive Metropolis (DRAM) 
 
 
 References
