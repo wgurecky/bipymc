@@ -9,7 +9,7 @@ def plot_mcmc_params(samples, labels, savefig='corner_plot.png', truths=None):
     fig.savefig(savefig)
 
 
-def plot_mcmc_chain(samples, labels, savefig, truths):
+def plot_mcmc_chain(samples, labels, savefig, truths=None):
     pl.clf()
     # count number of cols in samples
     n_params = samples.shape[1]
@@ -17,7 +17,8 @@ def plot_mcmc_chain(samples, labels, savefig, truths):
     for i in range(n_params):
         axes[i, 0].plot(samples[:, i].T, color="k", alpha=0.6)
         axes[i, 0].yaxis.set_major_locator(MaxNLocator(5))
-        axes[i, 0].axhline(truths[i], color="#888888", lw=2)
+        if truths is not None:
+            axes[i, 0].axhline(truths[i], color="#888888", lw=2)
         axes[i, 0].set_ylabel(labels[i])
     fig.tight_layout(h_pad=0.0)
     fig.savefig(savefig)
