@@ -5,7 +5,8 @@ from matplotlib.ticker import MaxNLocator
 
 def plot_mcmc_params(samples, labels, savefig='corner_plot.png', truths=None):
     fig = corner.corner(samples, labels=labels,
-            truths=truths, use_math_text=True)
+            truths=truths, use_math_text=True, show_titles=True,
+            title_fmt='0.3e', title_kwargs={'fontsize': 9})
     fig.savefig(savefig)
 
 

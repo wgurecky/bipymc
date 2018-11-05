@@ -68,10 +68,9 @@ class DeMcMpi(DeMc):
         dim = len(theta_0)
         # demc proposal settings
         gamma_base = kwargs.get("gamma", 2.38 / np.sqrt(2. * dim))
-        flip_prob = kwargs.get("flip", 0.1)
-        flip_prob = np.clip(flip_prob, 0.0, 1.0)
+        flip_prob = np.clip(kwargs.get("flip", 0.1), 0.0, 1.0)
         shuffle = kwargs.get("shuffle", True)
-        epsilon = kwargs.get("epsilon", 1e-6)
+        epsilon = kwargs.get("epsilon", 1e-15)
 
         def update_chain_pool(k, c_id, current_chain, prop_chain_pool, prop_chain_pool_ids):
             """!
