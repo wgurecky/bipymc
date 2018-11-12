@@ -20,6 +20,7 @@ class gp_kernel(object):
     @brief Used to generate a covarience matrix
     """
     def __init__(self, ndim):
+        self._ndim = ndim
         self._params = []
         self.n_params = None
 
@@ -28,6 +29,14 @@ class gp_kernel(object):
 
     def __call__(self, x0, x1):
         return self.eval(x0, x1, *self._params)
+
+    @property
+    def param_bounds(self):
+        # defaults to all params must be positive
+        p_bounds = []
+        for param in self.params:
+            p_bounds.append((1e-10, None))
+        return p_bounds
 
     @property
     def params(self):
@@ -111,6 +120,7 @@ class squared_exp_noise_mv(gp_kernel):
         return np.abs(self.params[:-1]) / np.sum(np.abs(self.params[:-1]))
 
 
+
 @jit(nopython=True)
 def build_cov(a, b, M):
     cov_m = np.zeros((len(a), len(b)))
@@ -134,9 +144,12 @@ class gp_regressor(object):
         self.x_known = np.array([])
         self.y_known = np.array([])
 
-    def fit(self, x, y, params_0=None, method="SLSQP"):
+    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="SLSQP"):
         """
         @brief Fit the kernel's shape params to the known data
+        @param x np_ndarray
+        @param y np_1darray
+        @param y_sigma np_1darray or float
         """
         if params_0 is not None:
             pass
@@ -144,8 +157,9 @@ class gp_regressor(object):
             params_0 = self.cov_fn.params
         self.x_known = x
         self.y_known = y
+        self.y_known_sigma = y_sigma
         neg_log_like_fn = lambda p_list: -1.0 * self.log_like(x, y, p_list)
-        res = minimize(neg_log_like_fn, x0=params_0, method=method)
+        res = minimize(neg_log_like_fn, x0=params_0, bounds=self.cov_fn.param_bounds, method=method)
         cov_params = res.x
         print("Fitted Cov Fn Params:", cov_params)
         self.cov_fn.params = cov_params
@@ -156,7 +170,7 @@ class gp_regressor(object):
         @param x_test np_ndarray
         """
         n = len(x_test)
-        K = self.cov_fn(self.x_known, self.x_known)
+        K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
         K_plus_sig = K + np.eye(len(self.x_known)) * 1e-12
         L = np.linalg.cholesky(K_plus_sig)
         alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.y_known))
@@ -168,7 +182,7 @@ class gp_regressor(object):
         @param x_test np_ndarray
         """
         n = len(x_test)
-        K = self.cov_fn(self.x_known, self.x_known)
+        K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
         K_plus_sig = K + np.eye(len(self.x_known)) * 1e-12
         L = np.linalg.cholesky(K_plus_sig)
         k_s = self.cov_fn(self.x_known, x_test)
@@ -202,7 +216,7 @@ class gp_regressor(object):
         @param x_test np_ndarray
         """
         n = len(x_test)
-        K = self.cov_fn(self.x_known, self.x_known)
+        K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
         K_plus_sig = K + np.eye(len(self.x_known)) * 1e-12
         L = np.linalg.cholesky(K_plus_sig)
 
@@ -271,23 +285,28 @@ if __name__ == "__main__":
     ytest_sd = my_gpr.predict_sd(Xtest)
 
     plt.figure()
-    plt.scatter(Xtrain, ytrain, label="train")
     plt.plot(Xtest, ytest_mean, label="mean")
     for y_test in ytest_samples.T:
-        plt.plot(Xtest, y_test, lw=0.1, ls='-', c='k', alpha=1.0)
+        plt.plot(Xtest, y_test, lw=0.1, ls='-', c='k', alpha=0.7)
     plt.plot(Xtest, ytest_mean.flatten() + 3.0 * ytest_sd, c='r', label=r"$\pm3\sigma$")
     plt.plot(Xtest, ytest_mean.flatten() - 3.0 * ytest_sd, c='r')
+    plt.scatter(Xtrain, ytrain, label="train")
+    plt.grid(axis='both', ls='--', alpha=0.5)
     plt.legend()
     plt.savefig("bo_sin_test.png")
     plt.close()
 
     # 2d test
-    import matplotlib.mlab as mlab
+    from scipy.stats import multivariate_normal
     x1 = np.random.uniform(-4, 4, 10)
     y1 = np.random.uniform(-4, 4, 10)
     X, Y = np.meshgrid(x1, y1)
-    Z1 = mlab.bivariate_normal(X, Y, 1.0, 1.0, 0.0, 0.0)
-    Z2 = mlab.bivariate_normal(X, Y, 1.5, 0.5, 1, 1)
+    mu1, cov1 = [0, 0], [[1.0, 0],[0, 1.0]]
+    rv1 = multivariate_normal(mu1, cov1)
+    Z1 = rv1.pdf(np.dstack((X, Y)))
+    mu2, cov2 = [1, 1], [[1.5, 0],[0, 0.5]]
+    rv = multivariate_normal(mu2, cov2)
+    Z2 = rv.pdf(np.dstack((X, Y)))
     # difference of Gaussians
     Z = 10.0 * (Z2 - Z1)
 
@@ -296,17 +315,24 @@ if __name__ == "__main__":
     my_gpr_nd = gp_regressor(ndim=2)
     my_gpr_nd.fit(Xtrain, ytrain)
 
-    n = 20
+    n = 50
     Xtest = np.linspace(-5, 5, n)
     xt, yt = np.meshgrid(Xtest, Xtest)
     Xtest = np.array((xt.flatten(), yt.flatten())).T
     ytest_mean = my_gpr_nd.predict(Xtest)
-
     zt = ytest_mean.reshape(xt.shape)
-    plt.figure()
-    plt.contour(xt, yt, zt, 20)
-    plt.contourf(xt, yt, zt, 20)
-    plt.colorbar()
-    plt.scatter(X, Y)
-    plt.savefig("bo_2d_test.png")
+
+    # plot contour
+    contour_plot = plt.figure()
+    x_grid, y_grid, z_grid = xt, yt, zt
+    plt.subplot(1, 1, 1)
+    nlevels = 20
+    cf = plt.contourf(x_grid, y_grid, z_grid, alpha=0.8, cmap="GnBu")
+    cs = plt.contour(x_grid, y_grid, z_grid, nlevels, colors='k', antialiased=True)
+    plt.clabel(cs, fontsize=8, inline=1)
+    cs = plt.colorbar(cf, shrink=0.8, extend='both', alpha=0.8)
+    plt.grid(b=True, which='major', color='k', linestyle='--')
+    plt.scatter(X, Y, c='k', s=3, alpha=0.6)
+    contour_plot.savefig("bo_2d_test.png")
+    plt.close()
 
