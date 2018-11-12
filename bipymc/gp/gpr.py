@@ -143,6 +143,8 @@ class gp_regressor(object):
         # self.cov_fn = squared_exp_noise(ndim)
         self.x_known = np.array([])
         self.y_known = np.array([])
+        # cov matrix storage to prevent unnecisasry recalc of cov matrix
+        self.K, self.L = None, None
 
     def fit(self, x, y, y_sigma=1e-10, params_0=None, method="SLSQP"):
         """
@@ -163,16 +165,22 @@ class gp_regressor(object):
         cov_params = res.x
         print("Fitted Cov Fn Params:", cov_params)
         self.cov_fn.params = cov_params
+        # pre-compute cholosky decomp of cov matrix
+        self._update_cholesky_k()
+
+    def _update_cholesky_k(self):
+        self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
+        K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
+        self.L = np.linalg.cholesky(K_plus_sig)
 
     def predict(self, x_test):
         """
         @brief Obtain mean estimate at points in x
         @param x_test np_ndarray
         """
-        n = len(x_test)
-        K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
-        K_plus_sig = K + np.eye(len(self.x_known)) * 1e-12
-        L = np.linalg.cholesky(K_plus_sig)
+        assert self.K is not None
+        K, L = self.K, self.L
+
         alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.y_known))
         return np.dot(self.cov_fn(self.x_known, x_test).T, alpha)
 
@@ -181,10 +189,9 @@ class gp_regressor(object):
         @brief Obtain standard deviation estimate at x
         @param x_test np_ndarray
         """
-        n = len(x_test)
-        K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
-        K_plus_sig = K + np.eye(len(self.x_known)) * 1e-12
-        L = np.linalg.cholesky(K_plus_sig)
+        assert self.K is not None
+        K, L = self.K, self.L
+
         k_s = self.cov_fn(self.x_known, x_test)
         v = np.linalg.solve(L, k_s)
         cov_m = self.cov_fn(x_test, x_test) - np.dot(v.T, v)
@@ -215,10 +222,8 @@ class gp_regressor(object):
         @brief Draw a single sample from gaussian process regression at x
         @param x_test np_ndarray
         """
-        n = len(x_test)
-        K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
-        K_plus_sig = K + np.eye(len(self.x_known)) * 1e-12
-        L = np.linalg.cholesky(K_plus_sig)
+        assert self.K is not None
+        K, L = self.K, self.L
 
         K_ss = self.cov_fn(x_test, x_test)
         K_s = self.cov_fn(self.x_known, x_test)
@@ -226,6 +231,7 @@ class gp_regressor(object):
         # get the mean prediction
         mu = self.predict(x_test)
         # compute scaling factor for unit-gaussian draws
+        n = len(x_test)
         B = np.linalg.cholesky(K_ss + 1e-12*np.eye(n) - np.dot(Lk.T, Lk))
         # add tailored gauss noise to mean prediction
         return  mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws)))
