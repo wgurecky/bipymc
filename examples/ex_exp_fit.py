@@ -236,7 +236,7 @@ def gen_initial_guess_bo():
         return np.array(r).flatten()
     my_bounds = ((10, 50), (0.1, 1.0), (-1.0, 1.0), (-1e-3, 0.0))
     my_bo = bo_optimizer(model_resid, dim=4, p_bounds=my_bounds, n_init=2, y_sigma=1e-2)
-    popt = my_bo.optimize(40, n_samples=50, diag_scale=1e-4, mode='min')
+    popt = my_bo.optimize(40, n_samples=20, diag_scale=1e-4, mode='min')
 
     print("=== Opti values by bayesian opt ===")
     print("[tau, c_inf, c_0, leakage]:")
