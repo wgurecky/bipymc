@@ -12,6 +12,7 @@
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
 from numba import jit
+from scipy.linalg import cho_solve, solve_triangular
 import numpy as np
 from scipy.optimize import minimize
 
@@ -162,7 +163,7 @@ class gp_regressor(object):
         self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
         K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
         self.L = np.linalg.cholesky(nearestPD(K_plus_sig))
-        self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.y_known))
+        self.alpha = cho_solve((self.L, True), self.y_known)
 
     def predict(self, x_test):
         """
@@ -204,7 +205,8 @@ class gp_regressor(object):
         K = self.cov_fn.eval(X, X, *cov_params[0])
         K_plus_sig = K + np.eye(n) * 1e-10
         L = np.linalg.cholesky(nearestPD(K_plus_sig))
-        alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
+        # alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
+        alpha = cho_solve((L, True), y)
         # note: trace is sum of diag
         return -0.5 * np.dot(y.T, alpha) - np.trace(L) - (n / 2.0) * np.log(2 * np.pi)
 

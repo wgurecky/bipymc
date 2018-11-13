@@ -13,6 +13,7 @@
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
 from mpi4py import MPI
+import time
 import sys
 from copy import deepcopy
 import numpy as np
@@ -178,7 +179,7 @@ def one_dim_ex():
 
     # bounds on params (x, y)
     my_bounds = ((-4, 4),)
-    my_bo = bo_optimizer(obj_fn_sin, dim=1, p_bounds=my_bounds, n_init=2)
+    my_bo = bo_optimizer(obj_fn_sin, dim=1, p_bounds=my_bounds, n_init=2, comm=comm)
 
     # run optimizer
     my_bo.optimize(20)
@@ -198,6 +199,7 @@ def two_dim_ex():
     comm = MPI.COMM_WORLD
     def obj_fn_2d(Xtest):
         X, Y = Xtest[:, 0], Xtest[:, 1]
+        # time.sleep(1)
         return X ** 2.0 + Y ** 2.0
 
     # plot original fn
@@ -225,7 +227,7 @@ def two_dim_ex():
 
     # bounds on params (x, y)
     my_bounds = ((-4, 4), (-4, 4))
-    my_bo = bo_optimizer(obj_fn_2d, dim=2, p_bounds=my_bounds, n_init=1, y_sigma=1e-1)
+    my_bo = bo_optimizer(obj_fn_2d, dim=2, p_bounds=my_bounds, n_init=1, y_sigma=1e-1, comm=comm)
 
     # run optimizer
     my_bo.optimize(20)
