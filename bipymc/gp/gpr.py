@@ -35,7 +35,7 @@ class gp_kernel(object):
         # defaults to all params must be positive
         p_bounds = []
         for param in self.params:
-            p_bounds.append((1e-10, None))
+            p_bounds.append((0.01, 1e10))
         return p_bounds
 
     @property
@@ -53,7 +53,7 @@ class squared_exp(gp_kernel):
     @brief Squared exponential kernel
     """
     def __init__(self, ndim=1):
-        self._params = [0.1]
+        self._params = [1.0]
         self.n_params = 1
 
     def eval(self, a, b, *params):
@@ -70,7 +70,7 @@ class squared_exp_noise(gp_kernel):
     @brief Squared exponential kernel with extra noise parameter.
     """
     def __init__(self, ndim=1):
-        self._params = [0.1, 1e-8]
+        self._params = [1.0, 1.0]
         self.n_params = 2
 
     def eval(self, a, b, *params):
@@ -83,11 +83,7 @@ class squared_exp_noise(gp_kernel):
             sigma_n = self.params[1]
         sqdist = np.sum(a**2,1).reshape(-1,1) + np.sum(b**2,1) - 2*np.dot(a, b.T)
         cov_m = np.exp(-.5 * (1/param) * sqdist)
-        is_square = (cov_m.shape[0] == cov_m.shape[1])
-        if is_square:
-            return cov_m + (sigma_n ** 2.0) * np.eye(np.shape(cov_m)[0])
-        else:
-            return cov_m
+        return cov_m * (sigma_n ** 2.0)
 
 
 class squared_exp_noise_mv(gp_kernel):
@@ -97,7 +93,7 @@ class squared_exp_noise_mv(gp_kernel):
     """
     def __init__(self, n_dim=1):
         self.ndim = n_dim
-        self._params = np.array(list(np.ones((n_dim))) + [1e-6]) * 1e-1
+        self._params = np.array(list(np.ones((n_dim))) + [1.0]) * 1e0
         self.n_params = n_dim + 1
 
     def eval(self, a, b, *params):
@@ -110,11 +106,7 @@ class squared_exp_noise_mv(gp_kernel):
             sigma_n = self.params[-1]
         M = np.array(l_param) ** (-2.0) * np.eye(len(l_param))
         cov_m = build_cov(a, b, M)
-        is_square = (cov_m.shape[0] == cov_m.shape[1])
-        if is_square:
-            return cov_m + (sigma_n ** 2.0) * np.eye(np.shape(cov_m)[0])
-        else:
-            return cov_m
+        return cov_m * (sigma_n ** 2.0)
 
     def rel_var_importance(self):
         return np.abs(self.params[:-1]) / np.sum(np.abs(self.params[:-1]))
@@ -140,13 +132,12 @@ class gp_regressor(object):
     """
     def __init__(self, ndim=1):
         self.cov_fn = squared_exp_noise_mv(ndim)
-        # self.cov_fn = squared_exp_noise(ndim)
         self.x_known = np.array([])
         self.y_known = np.array([])
         # cov matrix storage to prevent unnecisasry recalc of cov matrix
-        self.K, self.L = None, None
+        self.K, self.L, self.alpha = None, None, None
 
-    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="SLSQP"):
+    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="TNC"):
         """
         @brief Fit the kernel's shape params to the known data
         @param x np_ndarray
@@ -154,7 +145,7 @@ class gp_regressor(object):
         @param y_sigma np_1darray or float
         """
         if params_0 is not None:
-            pass
+            assert isinstance(params_0, list)
         else:
             params_0 = self.cov_fn.params
         self.x_known = x
@@ -172,17 +163,15 @@ class gp_regressor(object):
         self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
         K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
         self.L = np.linalg.cholesky(K_plus_sig)
+        self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.y_known))
 
     def predict(self, x_test):
         """
         @brief Obtain mean estimate at points in x
         @param x_test np_ndarray
         """
-        assert self.K is not None
-        K, L = self.K, self.L
-
-        alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.y_known))
-        return np.dot(self.cov_fn(self.x_known, x_test).T, alpha)
+        assert self.alpha is not None
+        return np.dot(self.cov_fn(self.x_known, x_test).T, self.alpha)
 
     def predict_sd(self, x_test):
         """
@@ -217,7 +206,7 @@ class gp_regressor(object):
         # note: trace is sum of diag
         return -0.5 * np.dot(y.T, alpha) - np.trace(L) - (n / 2.0) * np.log(2 * np.pi)
 
-    def sample_y(self, x_test, n_draws=1):
+    def sample_y(self, x_test, n_draws=1, diag_scale=1e-6):
         """
         @brief Draw a single sample from gaussian process regression at x
         @param x_test np_ndarray
@@ -232,7 +221,7 @@ class gp_regressor(object):
         mu = self.predict(x_test)
         # compute scaling factor for unit-gaussian draws
         n = len(x_test)
-        B = np.linalg.cholesky(K_ss + 1e-12*np.eye(n) - np.dot(Lk.T, Lk))
+        B = np.linalg.cholesky(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk))
         # add tailored gauss noise to mean prediction
         return  mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws)))
 
@@ -299,7 +288,7 @@ if __name__ == "__main__":
     plt.scatter(Xtrain, ytrain, label="train")
     plt.grid(axis='both', ls='--', alpha=0.5)
     plt.legend()
-    plt.savefig("bo_sin_test.png")
+    plt.savefig("gp_sin_test.png")
     plt.close()
 
     # 2d test
@@ -339,6 +328,60 @@ if __name__ == "__main__":
     cs = plt.colorbar(cf, shrink=0.8, extend='both', alpha=0.8)
     plt.grid(b=True, which='major', color='k', linestyle='--')
     plt.scatter(X, Y, c='k', s=3, alpha=0.6)
-    contour_plot.savefig("bo_2d_test.png")
+    contour_plot.savefig("gp_2d_test.png")
     plt.close()
 
+    # 2d quadradic gp fit example
+    def obj_fn_2d(Xtest):
+        X, Y = Xtest[:, 0], Xtest[:, 1]
+        return X ** 2.0 + Y ** 2.0
+
+    x1 = np.random.uniform(-4, 4, 70)
+    y1 = np.random.uniform(-4, 4, 70)
+    Xtrain = np.array([x1, y1]).T
+    Z = obj_fn_2d(Xtrain)
+
+    my_gpr_2d = gp_regressor(ndim=2)
+    import pdb; pdb.set_trace()
+    my_gpr_2d.fit(Xtrain, Z, y_sigma=1e-2)
+
+    n = 50
+    Xtest = np.linspace(-5, 5, n)
+    xt, yt = np.meshgrid(Xtest, Xtest)
+    Xtest = np.array((xt.flatten(), yt.flatten())).T
+    ytest_mean = my_gpr_2d.predict(Xtest)
+    zt = ytest_mean.reshape(xt.shape)
+
+    # plot contour
+    contour_plot = plt.figure()
+    x_grid, y_grid, z_grid = xt, yt, zt
+    plt.subplot(1, 1, 1)
+    nlevels = 20
+    cf = plt.contourf(x_grid, y_grid, z_grid, alpha=0.8, cmap="GnBu")
+    cs = plt.contour(x_grid, y_grid, z_grid, nlevels, colors='k', antialiased=True)
+    plt.clabel(cs, fontsize=8, inline=1)
+    cs = plt.colorbar(cf, shrink=0.8, extend='both', alpha=0.8)
+    plt.grid(b=True, which='major', color='k', linestyle='--')
+    plt.scatter(x1, y1, c='k', s=3, alpha=0.6)
+    contour_plot.savefig("gp_2d_test_quad.png")
+    plt.close()
+
+    # sk-learn compare
+    from sklearn.gaussian_process import GaussianProcessRegressor
+    sk_gpr = GaussianProcessRegressor()
+    sk_gpr.fit(Xtrain, Z)
+    zt = sk_gpr.predict(Xtest).reshape(xt.shape)
+
+    # plot contour
+    contour_plot = plt.figure()
+    x_grid, y_grid, z_grid = xt, yt, zt
+    plt.subplot(1, 1, 1)
+    nlevels = 20
+    cf = plt.contourf(x_grid, y_grid, z_grid, alpha=0.8, cmap="GnBu")
+    cs = plt.contour(x_grid, y_grid, z_grid, nlevels, colors='k', antialiased=True)
+    plt.clabel(cs, fontsize=8, inline=1)
+    cs = plt.colorbar(cf, shrink=0.8, extend='both', alpha=0.8)
+    plt.grid(b=True, which='major', color='k', linestyle='--')
+    plt.scatter(x1, y1, c='k', s=3, alpha=0.6)
+    contour_plot.savefig("gp_2d_test_quad_sk.png")
+    plt.close()
