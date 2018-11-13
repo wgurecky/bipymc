@@ -20,12 +20,14 @@ comm = MPI.COMM_WORLD
 try:
     from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
     from bipymc.demc import DeMcMpi
+    from bipymc.gp.bayes_opti import bo_optimizer
     from bipymc.mc_plot import mc_plot
 except:
     # add to path
     sys.path.append('../.')
     from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
     from bipymc.demc import DeMcMpi
+    from bipymc.gp.bayes_opti import bo_optimizer
     from bipymc.mc_plot import mc_plot
 np.random.seed(42)
 
@@ -50,68 +52,77 @@ def exp_c1_model(tau, c_inf, t, **kwargs):
     v1, v2 = 1.0, 1.0
     return c_inf * np.exp(-t / tau)
 
+def model(theta, t):
+    """!
+    @brief model liklihood.  This is proportional to the
+    true liklihood function.
+    """
+    tau, c_inf, c_0, leak, sigma = theta
+    return exp_c1_model_full(tau, c_inf, c_0, leak, t)
+
+def model_se(theta, t, y_data):
+    """!
+    @brief model squared error
+    """
+    tau, c_inf, c_0, leak = theta
+    m = exp_c1_model_full(tau, c_inf, c_0, leak, t)
+    return np.sum((m - y_data) ** 2.)
+
+def ln_model_like(theta, t, y_data):
+    """!
+    @brief model log-liklihood
+    @param theta list of model params
+    """
+    # y_sigma = 1.0e-8  # y_errs
+    y_sigma = theta[-1]
+    ln_model = np.sum((model(theta, t) - y_data) ** 2. / y_sigma - np.log(1.0 / y_sigma))
+    # ln_model = np.sum((model(theta, t) - y_data) ** 2.)
+    return -0.5 * (ln_model)
+
+def lnprob(theta, t, y_data):
+    """!
+    @brief log prob of RHS of bayes
+    \f[
+    lnprob = ln(p(theta|data)p(theta))
+           = ln(p(theta|data) + ln(p(theta))
+    \f]
+    where p(theta) is the prior distribution
+    and p(theta|data) is the likelihood function of the model
+    @param theta list of parameters:
+        theta[0] == tau
+        theta[1] == c_inf
+    @param t time vector
+    @param y_data experimental concentration data
+    """
+    lp = ln_params_prior(*theta)
+    if not np.isfinite(lp):
+        return -np.inf
+    return lp + ln_model_like(theta, t, y_data)
+
+def ln_params_prior(tau, c_inf, c_0, leak, sigma):
+    """!
+    @brief Prior distributions for model params tau and c_inf
+    @use flat priors
+    """
+    sigma_range = np.array([0, 1.0])
+    c_0_range = np.array([-1.0, 1.])
+    leak_range = np.array([-5., 5.0])
+    c_inf_guess_range = np.array([-5, 5.0])
+    tau_guess_range = np.array([1.0, 50])
+    if (c_inf_guess_range[0] < c_inf < c_inf_guess_range[1]) \
+        and (tau_guess_range[0] < tau < tau_guess_range[1]) \
+        and (c_0_range[0] < c_0 < c_0_range[1]) \
+        and (leak_range[0] < leak < leak_range[1]) \
+        and (sigma_range[0] < sigma < sigma_range[1]):
+        return 0.0
+    else:
+        return -np.inf
+
 
 def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     """!
     @brief Fit an exponential model to some data
     """
-    def model(theta, t):
-        """!
-        @brief model liklihood.  This is proportional to the
-        true liklihood function.
-        """
-        tau, c_inf, c_0, leak, sigma = theta
-        return exp_c1_model_full(tau, c_inf, c_0, leak, t)
-
-    def ln_model_like(theta, t, y_data):
-        """!
-        @brief model log-liklihood
-        @param theta list of model params
-        """
-        # y_sigma = 1.0e-8  # y_errs
-        y_sigma = theta[-1]
-        ln_model = np.sum((model(theta, t) - y_data) ** 2. / y_sigma - np.log(1.0 / y_sigma))
-        # ln_model = np.sum((model(theta, t) - y_data) ** 2.)
-        return -0.5 * (ln_model)
-
-    def lnprob(theta, t, y_data):
-        """!
-        @brief log prob of RHS of bayes
-        \f[
-        lnprob = ln(p(theta|data)p(theta))
-               = ln(p(theta|data) + ln(p(theta))
-        \f]
-        where p(theta) is the prior distribution
-        and p(theta|data) is the likelihood function of the model
-        @param theta list of parameters:
-            theta[0] == tau
-            theta[1] == c_inf
-        @param t time vector
-        @param y_data experimental concentration data
-        """
-        lp = ln_params_prior(*theta)
-        if not np.isfinite(lp):
-            return -np.inf
-        return lp + ln_model_like(theta, t, y_data)
-
-    def ln_params_prior(tau, c_inf, c_0, leak, sigma):
-        """!
-        @brief Prior distributions for model params tau and c_inf
-        @use flat priors
-        """
-        sigma_range = np.array([0, 1.0])
-        c_0_range = np.array([-1.0, 1.])
-        leak_range = np.array([-5., 5.0])
-        c_inf_guess_range = np.array([-5, 5.0])
-        tau_guess_range = np.array([1.0, 50])
-        if (c_inf_guess_range[0] < c_inf < c_inf_guess_range[1]) \
-            and (tau_guess_range[0] < tau < tau_guess_range[1]) \
-            and (c_0_range[0] < c_0 < c_0_range[1]) \
-            and (leak_range[0] < leak < leak_range[1]) \
-            and (sigma_range[0] < sigma < sigma_range[1]):
-            return 0.0
-        else:
-            return -np.inf
 
     # get data
     t_data, y_data = read_data()
@@ -213,6 +224,25 @@ def gen_initial_guess():
     plt.close()
     return popt
 
+
+def gen_initial_guess_bo():
+    # use bayesian optimization to generate an initial guess for the model params
+    xdata, ydata = read_data()
+    r = []
+    def model_resid(Xtest):
+        r = []
+        for theta in Xtest:
+            r.append(model_se(theta, xdata, ydata))
+        return np.array(r).flatten()
+    my_bounds = ((10, 50), (0.1, 1.0), (-1.0, 1.0), (-1e-3, 0.0))
+    my_bo = bo_optimizer(model_resid, dim=4, p_bounds=my_bounds, n_init=2, y_sigma=1e-2)
+    popt = my_bo.optimize(40, n_samples=50, diag_scale=1e-4, mode='min')
+
+    print("=== Opti values by bayesian opt ===")
+    print("[tau, c_inf, c_0, leakage]:")
+    print(popt)
+    return popt
+
 def read_data(file_name = 'concentration_data.mat', drop=10, col=3):
     """!
     @brief read raw data in
@@ -225,4 +255,5 @@ def read_data(file_name = 'concentration_data.mat', drop=10, col=3):
 
 if __name__ == "__main__":
     popt = gen_initial_guess()
-    fit_exp_data(popt, "DE-MC")
+    popt_bo = gen_initial_guess_bo()
+    fit_exp_data(popt_bo, "DE-MC")

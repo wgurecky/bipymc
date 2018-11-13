@@ -112,7 +112,6 @@ class squared_exp_noise_mv(gp_kernel):
         return np.abs(self.params[:-1]) / np.sum(np.abs(self.params[:-1]))
 
 
-
 @jit(nopython=True)
 def build_cov(a, b, M):
     cov_m = np.zeros((len(a), len(b)))
@@ -173,7 +172,7 @@ class gp_regressor(object):
         assert self.alpha is not None
         return np.dot(self.cov_fn(self.x_known, x_test).T, self.alpha)
 
-    def predict_sd(self, x_test):
+    def predict_sd(self, x_tests):
         """
         @brief Obtain standard deviation estimate at x
         @param x_test np_ndarray
@@ -181,10 +180,13 @@ class gp_regressor(object):
         assert self.K is not None
         K, L = self.K, self.L
 
-        k_s = self.cov_fn(self.x_known, x_test)
-        v = np.linalg.solve(L, k_s)
-        cov_m = self.cov_fn(x_test, x_test) - np.dot(v.T, v)
-        return np.sqrt(cov_m.diagonal())
+        res = []
+        for x_test in np.array_split(x_tests, int(len(x_tests) / 10), axis=0):
+            k_s = self.cov_fn(self.x_known, x_test)
+            v = np.linalg.solve(L, k_s)
+            cov_m = self.cov_fn(x_test, x_test) - np.dot(v.T, v)
+            res.append(np.sqrt(cov_m.diagonal()))
+        return np.array(res).flatten()
 
     def log_like(self, X, y, *cov_params):
         """!
@@ -206,7 +208,7 @@ class gp_regressor(object):
         # note: trace is sum of diag
         return -0.5 * np.dot(y.T, alpha) - np.trace(L) - (n / 2.0) * np.log(2 * np.pi)
 
-    def sample_y(self, x_test, n_draws=1, diag_scale=1e-6):
+    def sample_y(self, x_tests, n_draws=1, diag_scale=1e-6):
         """
         @brief Draw a single sample from gaussian process regression at x
         @param x_test np_ndarray
@@ -214,16 +216,21 @@ class gp_regressor(object):
         assert self.K is not None
         K, L = self.K, self.L
 
-        K_ss = self.cov_fn(x_test, x_test)
-        K_s = self.cov_fn(self.x_known, x_test)
-        Lk = np.linalg.solve(L, K_s)
-        # get the mean prediction
-        mu = self.predict(x_test)
-        # compute scaling factor for unit-gaussian draws
-        n = len(x_test)
-        B = np.linalg.cholesky(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk))
-        # add tailored gauss noise to mean prediction
-        return  mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws)))
+        res = []
+        for x_test in np.array_split(x_tests, int(len(x_tests) / 10), axis=0):
+            K_ss = self.cov_fn(x_test, x_test)
+            K_s = self.cov_fn(self.x_known, x_test)
+            Lk = np.linalg.solve(L, K_s)
+            # get the mean prediction
+            mu = self.predict(x_test)
+            # compute scaling factor for unit-gaussian draws
+            n = len(x_test)
+            B = np.linalg.cholesky(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk))
+            # add tailored gauss noise to mean prediction
+            res.append(mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws))))
+        result = np.array(res).reshape(-1, n_draws)
+        return result
+
 
 
 def nearestPD(A):
@@ -271,7 +278,7 @@ if __name__ == "__main__":
     my_gpr = gp_regressor()
     my_gpr.fit(Xtrain, ytrain)
 
-    n = 50
+    n = 500
     Xtest = np.linspace(-5, 5, n).reshape(-1,1)
     ytest_mean = my_gpr.predict(Xtest)
 
@@ -310,7 +317,7 @@ if __name__ == "__main__":
     my_gpr_nd = gp_regressor(ndim=2)
     my_gpr_nd.fit(Xtrain, ytrain)
 
-    n = 50
+    n = 100
     Xtest = np.linspace(-5, 5, n)
     xt, yt = np.meshgrid(Xtest, Xtest)
     Xtest = np.array((xt.flatten(), yt.flatten())).T
@@ -342,7 +349,6 @@ if __name__ == "__main__":
     Z = obj_fn_2d(Xtrain)
 
     my_gpr_2d = gp_regressor(ndim=2)
-    import pdb; pdb.set_trace()
     my_gpr_2d.fit(Xtrain, Z, y_sigma=1e-2)
 
     n = 50

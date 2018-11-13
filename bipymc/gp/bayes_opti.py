@@ -64,17 +64,21 @@ class bo_optimizer(object):
         assert len(p_bounds[0]) == 2
         self._p_bounds = list(list(p_b) for p_b in p_bounds)
 
-    def optimize(self, n_iter=10, n_samples=40, max_depth=2):
+    def optimize(self, n_iter=10, n_samples=100, max_depth=2, mode='min', diag_scale=1e-6):
         for i in range(n_iter):
             self.comm.Barrier()
             # everyone get a proposal sample
-            converged = False
+            converged, try_count = False, 0
             while not converged:
                 try:
-                    x_proposal, y_proposal = self.sample_thompson(max_depth=max_depth, n=n_samples)
+                    x_proposal, y_proposal = self.sample_thompson( \
+                            max_depth=max_depth, n=n_samples, mode=mode, diag_scale=diag_scale)
                     converged = True
                 except:
                     print("Resampling")
+                    try_count += 1
+                    if try_count > 2:
+                        break
                     sys.stdout.flush()
 
             # update known sample locations
@@ -85,12 +89,20 @@ class bo_optimizer(object):
             self.gp_model.fit(self.x_known, self.y_known.flatten(), self.y_sigma)
 
             # print mins
-            self.comm.Barrier()
             if self.comm.rank == 0:
-                best_idx = np.argmin(self.y_known)
+                if mode == 'min':
+                    best_idx = np.argmin(self.y_known)
+                else:
+                    best_idx = np.argmax(self.y_known)
                 print("Iteration: %d, Best Obj Fn val=%0.5e at %s" % \
                         (i, self.y_known[best_idx], str(self.x_known[best_idx])))
                 sys.stdout.flush()
+        self.comm.Barrier()
+        if mode == 'min':
+            best_idx = np.argmin(self.y_known)
+        else:
+            best_idx = np.argmax(self.y_known)
+        return self.x_known[best_idx]
 
     def sample_uniform(self, n_init=2, random=True):
         sample_grid = []
