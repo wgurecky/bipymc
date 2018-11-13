@@ -161,7 +161,7 @@ class gp_regressor(object):
     def _update_cholesky_k(self):
         self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
         K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
-        self.L = np.linalg.cholesky(K_plus_sig)
+        self.L = np.linalg.cholesky(nearestPD(K_plus_sig))
         self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.y_known))
 
     def predict(self, x_test):

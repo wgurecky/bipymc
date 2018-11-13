@@ -75,15 +75,22 @@ class bo_optimizer(object):
                             max_depth=max_depth, n=n_samples, mode=mode, diag_scale=diag_scale)
                     converged = True
                 except:
-                    print("Resampling")
                     try_count += 1
-                    if try_count > 2:
+                    if try_count > 1:
+                        print("WARNING: Thompson sample failed. Re-Sampling.")
+                        x_proposal, y_proposal = self.sample_uniform(1)
                         break
-                    sys.stdout.flush()
+            # broadcase samples
+            all_best_x = np.zeros((self.comm.size, self.dim)).flatten()
+            all_best_y = np.zeros((self.comm.size))
+            self.comm.Allgather(x_proposal.flatten(), all_best_x)
+            all_best_x = all_best_x.reshape((self.comm.size, self.dim))
+            self.comm.Allgather(np.array(y_proposal), all_best_y)
+            all_x_proposal, all_y_proposal = all_best_x, all_best_y.flatten()
 
             # update known sample locations
-            self.x_known = np.vstack((self.x_known, x_proposal))
-            self.y_known = np.concatenate((self.y_known, y_proposal))
+            self.x_known = np.vstack((self.x_known, all_x_proposal))
+            self.y_known = np.concatenate((self.y_known, all_y_proposal))
 
             # fit GP to current data
             self.gp_model.fit(self.x_known, self.y_known.flatten(), self.y_sigma)
@@ -158,17 +165,14 @@ class bo_optimizer(object):
                 p_bounds[j][1] = np.clip(best_x[j] + 0.49 * grid_div_size[j], \
                         self.param_bounds[j][0], self.param_bounds[j][1])
             n /= 2
-        # broadcast
+        # add jitter to prevent possibility of two samples landing in same loc
+        best_x += np.random.uniform(-1e-12, 1e-12, 1)
         y_new = self.obj_f(np.array([best_x]))
-        all_best_x = np.zeros((self.comm.size, self.dim)).flatten()
-        all_best_y = np.zeros((self.comm.size))
-        self.comm.Allgather(best_x.flatten(), all_best_x)
-        all_best_x = all_best_x.reshape((self.comm.size, self.dim))
-        self.comm.Allgather(np.array(y_new), all_best_y)
-        return all_best_x, all_best_y.flatten()
+        return best_x, y_new
 
 
 def one_dim_ex():
+    comm = MPI.COMM_WORLD
     def obj_fn_sin(Xtest):
         return np.sin(Xtest)
 
@@ -180,16 +184,18 @@ def one_dim_ex():
     my_bo.optimize(20)
 
     # plot the response surface
-    plt.figure()
-    x_test = np.linspace(my_bounds[0][0], my_bounds[0][1], 100)
-    plt.plot(x_test, my_bo.gp_model.predict(x_test), label="mean")
-    plt.scatter(my_bo.x_known, my_bo.y_known, label="samples", c='k', s=10, marker='x')
-    plt.grid(axis='both', ls='--', alpha=0.5)
-    plt.legend()
-    plt.savefig("bo_sin_test.png")
-    plt.close()
+    if comm.rank == 0:
+        plt.figure()
+        x_test = np.linspace(my_bounds[0][0], my_bounds[0][1], 100)
+        plt.plot(x_test, my_bo.gp_model.predict(x_test), label="mean")
+        plt.scatter(my_bo.x_known, my_bo.y_known, label="samples", c='k', s=10, marker='x')
+        plt.grid(axis='both', ls='--', alpha=0.5)
+        plt.legend()
+        plt.savefig("bo_sin_test.png")
+        plt.close()
 
 def two_dim_ex():
+    comm = MPI.COMM_WORLD
     def obj_fn_2d(Xtest):
         X, Y = Xtest[:, 0], Xtest[:, 1]
         return X ** 2.0 + Y ** 2.0
@@ -203,17 +209,19 @@ def two_dim_ex():
     Z = Z.reshape(X.shape)
 
     # plot contour
-    contour_plot = plt.figure()
-    x_grid, y_grid, z_grid = X, Y, Z
-    plt.subplot(1, 1, 1)
-    nlevels = 20
-    cf = plt.contourf(x_grid, y_grid, z_grid, alpha=0.8, cmap="GnBu")
-    cs = plt.contour(x_grid, y_grid, z_grid, nlevels, colors='k', antialiased=True)
-    plt.clabel(cs, fontsize=8, inline=1)
-    cs = plt.colorbar(cf, shrink=0.8, extend='both', alpha=0.8)
-    plt.grid(b=True, which='major', color='k', linestyle='--')
-    plt.scatter(X, Y, c='k', s=3, alpha=0.6)
-    contour_plot.savefig("bo_2d_orig.png")
+    if comm.rank == 0:
+        contour_plot = plt.figure()
+        x_grid, y_grid, z_grid = X, Y, Z
+        plt.subplot(1, 1, 1)
+        nlevels = 20
+        cf = plt.contourf(x_grid, y_grid, z_grid, alpha=0.8, cmap="GnBu")
+        cs = plt.contour(x_grid, y_grid, z_grid, nlevels, colors='k', antialiased=True)
+        plt.clabel(cs, fontsize=8, inline=1)
+        cs = plt.colorbar(cf, shrink=0.8, extend='both', alpha=0.8)
+        plt.grid(b=True, which='major', color='k', linestyle='--')
+        plt.scatter(X, Y, c='k', s=3, alpha=0.6)
+        contour_plot.savefig("bo_2d_orig.png")
+        plt.close()
 
     # bounds on params (x, y)
     my_bounds = ((-4, 4), (-4, 4))
@@ -222,9 +230,10 @@ def two_dim_ex():
     # run optimizer
     my_bo.optimize(20)
     # best estimate
-    plt.scatter(my_bo.x_known[:, 0], my_bo.x_known[:, 1], c='r', s=4, alpha=0.8)
-    contour_plot.savefig("bo_2d_sampled.png")
-    plt.close()
+    if comm.rank == 0:
+        plt.scatter(my_bo.x_known[:, 0], my_bo.x_known[:, 1], c='r', s=4, alpha=0.8)
+        contour_plot.savefig("bo_2d_sampled.png")
+        plt.close()
 
     n = 50
     my_gpr_nd = my_bo.gp_model
@@ -235,18 +244,20 @@ def two_dim_ex():
     zt = ytest_mean.reshape(xt.shape)
 
     # plot contour
-    contour_plot = plt.figure()
-    x_grid, y_grid, z_grid = xt, yt, zt
-    plt.subplot(1, 1, 1)
-    nlevels = 20
-    cf = plt.contourf(x_grid, y_grid, z_grid, alpha=0.8, cmap="GnBu")
-    cs = plt.contour(x_grid, y_grid, z_grid, nlevels, colors='k', antialiased=True)
-    plt.clabel(cs, fontsize=8, inline=1)
-    cs = plt.colorbar(cf, shrink=0.8, extend='both', alpha=0.8)
-    plt.grid(b=True, which='major', color='k', linestyle='--')
-    plt.scatter(my_bo.x_known[:, 0], my_bo.x_known[:, 1], c='r', s=4, alpha=0.8)
-    contour_plot.savefig("bo_2d_predicted.png")
-    print("Total N samples: %d" % len(my_bo.y_known))
+    if comm.rank == 0:
+        contour_plot = plt.figure()
+        x_grid, y_grid, z_grid = xt, yt, zt
+        plt.subplot(1, 1, 1)
+        nlevels = 20
+        cf = plt.contourf(x_grid, y_grid, z_grid, alpha=0.8, cmap="GnBu")
+        cs = plt.contour(x_grid, y_grid, z_grid, nlevels, colors='k', antialiased=True)
+        plt.clabel(cs, fontsize=8, inline=1)
+        cs = plt.colorbar(cf, shrink=0.8, extend='both', alpha=0.8)
+        plt.grid(b=True, which='major', color='k', linestyle='--')
+        plt.scatter(my_bo.x_known[:, 0], my_bo.x_known[:, 1], c='r', s=4, alpha=0.8)
+        contour_plot.savefig("bo_2d_predicted.png")
+        print("Total N samples: %d" % len(my_bo.y_known))
+        plt.close()
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
