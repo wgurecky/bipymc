@@ -141,8 +141,10 @@ class bo_optimizer(object):
             best_y = sample_y[idx_best]
             # collapse p_bounds about best est
             for j in range(len(p_bounds)):
-                p_bounds[j][0] = best_x[j] - 0.49 * grid_div_size[j]
-                p_bounds[j][1] = best_x[j] + 0.49 * grid_div_size[j]
+                p_bounds[j][0] = np.clip(best_x[j] - 0.49 * grid_div_size[j], \
+                        self.param_bounds[j][0], self.param_bounds[j][1])
+                p_bounds[j][1] = np.clip(best_x[j] + 0.49 * grid_div_size[j], \
+                        self.param_bounds[j][0], self.param_bounds[j][1])
             n /= 2
         # broadcast
         y_new = self.obj_f(np.array([best_x]))
@@ -236,5 +238,5 @@ def two_dim_ex():
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    two_dim_ex()
     one_dim_ex()
+    two_dim_ex()
