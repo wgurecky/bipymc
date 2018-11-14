@@ -173,7 +173,7 @@ class gp_regressor(object):
         assert self.alpha is not None
         return np.dot(self.cov_fn(self.x_known, x_test).T, self.alpha)
 
-    def predict_sd(self, x_tests):
+    def predict_sd(self, x_test, cov=False):
         """
         @brief Obtain standard deviation estimate at x
         @param x_test np_ndarray
@@ -181,13 +181,18 @@ class gp_regressor(object):
         assert self.K is not None
         K, L = self.K, self.L
 
-        res = []
-        for x_test in np.array_split(x_tests, int(len(x_tests) / 10), axis=0):
-            k_s = self.cov_fn(self.x_known, x_test)
-            v = np.linalg.solve(L, k_s)
-            cov_m = self.cov_fn(x_test, x_test) - np.dot(v.T, v)
-            res.append(np.sqrt(cov_m.diagonal()))
-        return np.array(res).flatten()
+        # res = []
+        # chunk problem in to smaller problems
+        # for x_test in np.array_split(x_tests, 2, axis=0):
+        k_s = self.cov_fn(self.x_known, x_test)
+        v = solve_triangular(L, k_s, check_finite=False, lower=True)
+        cov_m = self.cov_fn(x_test, x_test) - np.dot(v.T, v)
+        #    res.append(np.sqrt(cov_m.diagonal()))
+        # return np.array(res).flatten()
+        if cov == True:
+            return np.sqrt(cov_m.diagonal()), cov_m
+        else:
+            return np.sqrt(cov_m.diagonal())
 
     def log_like(self, X, y, *cov_params):
         """!
@@ -210,27 +215,15 @@ class gp_regressor(object):
         # note: trace is sum of diag
         return -0.5 * np.dot(y.T, alpha) - np.trace(L) - (n / 2.0) * np.log(2 * np.pi)
 
-    def sample_y(self, x_tests, n_draws=1, diag_scale=1e-6):
+    def sample_y(self, x_test, n_draws=1, diag_scale=1e-6):
         """
         @brief Draw a single sample from gaussian process regression at x
         @param x_test np_ndarray
         """
-        assert self.K is not None
-        K, L = self.K, self.L
-
-        res = []
-        for x_test in np.array_split(x_tests, int(len(x_tests) / 10), axis=0):
-            K_ss = self.cov_fn(x_test, x_test)
-            K_s = self.cov_fn(self.x_known, x_test)
-            Lk = np.linalg.solve(L, K_s)
-            # get the mean prediction
-            mu = self.predict(x_test)
-            # compute scaling factor for unit-gaussian draws
-            n = len(x_test)
-            B = np.linalg.cholesky(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk))
-            # add tailored gauss noise to mean prediction
-            res.append(mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws))))
-        result = np.array(res).reshape(-1, n_draws)
+        mu = self.predict(x_test)
+        _sd, cov = self.predict_sd(x_test, cov=True)
+        result = np.random.multivariate_normal(mu.flatten(), cov, size=n_draws).T
+        # return expected shape: (len(xtest), n_draws)
         return result
 
 
