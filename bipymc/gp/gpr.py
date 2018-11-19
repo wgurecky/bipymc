@@ -12,6 +12,7 @@
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
 from numba import jit
+from scipy.linalg import cho_solve, solve_triangular
 import numpy as np
 from scipy.optimize import minimize
 
@@ -112,7 +113,6 @@ class squared_exp_noise_mv(gp_kernel):
         return np.abs(self.params[:-1]) / np.sum(np.abs(self.params[:-1]))
 
 
-
 @jit(nopython=True)
 def build_cov(a, b, M):
     cov_m = np.zeros((len(a), len(b)))
@@ -152,7 +152,7 @@ class gp_regressor(object):
         self.y_known = y
         self.y_known_sigma = y_sigma
         neg_log_like_fn = lambda p_list: -1.0 * self.log_like(x, y, p_list)
-        res = minimize(neg_log_like_fn, x0=params_0, bounds=self.cov_fn.param_bounds, method=method)
+        res = minimize(neg_log_like_fn, x0=params_0, bounds=self.cov_fn.param_bounds, method=method, options={'maxiter': 25})
         cov_params = res.x
         print("Fitted Cov Fn Params:", cov_params)
         self.cov_fn.params = cov_params
@@ -162,8 +162,8 @@ class gp_regressor(object):
     def _update_cholesky_k(self):
         self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
         K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
-        self.L = np.linalg.cholesky(K_plus_sig)
-        self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.y_known))
+        self.L = np.linalg.cholesky(nearestPD(K_plus_sig))
+        self.alpha = cho_solve((self.L, True), self.y_known)
 
     def predict(self, x_test):
         """
@@ -173,7 +173,7 @@ class gp_regressor(object):
         assert self.alpha is not None
         return np.dot(self.cov_fn(self.x_known, x_test).T, self.alpha)
 
-    def predict_sd(self, x_test):
+    def predict_sd(self, x_tests, cov=False, chunk_size=10):
         """
         @brief Obtain standard deviation estimate at x
         @param x_test np_ndarray
@@ -181,10 +181,14 @@ class gp_regressor(object):
         assert self.K is not None
         K, L = self.K, self.L
 
-        k_s = self.cov_fn(self.x_known, x_test)
-        v = np.linalg.solve(L, k_s)
-        cov_m = self.cov_fn(x_test, x_test) - np.dot(v.T, v)
-        return np.sqrt(cov_m.diagonal())
+        res = []
+        # chunk problem in to smaller problems
+        for x_test in np.array_split(x_tests, int(np.ceil(len(x_tests) / chunk_size)), axis=0):
+            k_s = self.cov_fn(self.x_known, x_test)
+            v = solve_triangular(L, k_s, check_finite=False, lower=True)
+            cov_m = self.cov_fn(x_test, x_test) - np.dot(v.T, v)
+            res.append(np.sqrt(cov_m.diagonal()))
+        return np.array(res).flatten()
 
     def log_like(self, X, y, *cov_params):
         """!
@@ -202,28 +206,48 @@ class gp_regressor(object):
         K = self.cov_fn.eval(X, X, *cov_params[0])
         K_plus_sig = K + np.eye(n) * 1e-10
         L = np.linalg.cholesky(nearestPD(K_plus_sig))
-        alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
+        # alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
+        alpha = cho_solve((L, True), y)
         # note: trace is sum of diag
         return -0.5 * np.dot(y.T, alpha) - np.trace(L) - (n / 2.0) * np.log(2 * np.pi)
 
-    def sample_y(self, x_test, n_draws=1, diag_scale=1e-6):
+    def sample_y(self, x_tests, n_draws=1, diag_scale=1e-6, chunk_size=10):
         """
-        @brief Draw a single sample from gaussian process regression at x
-        @param x_test np_ndarray
+        @brief Draw a single sample from gaussian process regression at locations x_tests
+        @param x_tests np_ndarray  locations at which to sample the gaussian process
         """
         assert self.K is not None
         K, L = self.K, self.L
 
-        K_ss = self.cov_fn(x_test, x_test)
-        K_s = self.cov_fn(self.x_known, x_test)
-        Lk = np.linalg.solve(L, K_s)
-        # get the mean prediction
-        mu = self.predict(x_test)
-        # compute scaling factor for unit-gaussian draws
-        n = len(x_test)
-        B = np.linalg.cholesky(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk))
-        # add tailored gauss noise to mean prediction
-        return  mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws)))
+        res = []
+        for x_test in np.array_split(x_tests, int(np.ceil(len(x_tests) / chunk_size)), axis=0):
+            K_ss = self.cov_fn(x_test, x_test)
+            K_s = self.cov_fn(self.x_known, x_test)
+            Lk = np.linalg.solve(L, K_s)
+            # get the mean prediction
+            mu = self.predict(x_test)
+            # compute scaling factor for unit-gaussian draws
+            n = len(x_test)
+            B = np.linalg.cholesky(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk))
+            # add tailored gauss noise to mean prediction
+            res.append(mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws))))
+        result = np.array(res).reshape(-1, n_draws)
+        # expected shape: (len(xtest), n_draws)
+        return result
+
+    def sample_y_rnd(self, x_tests, n_draws=1, chunk_size=10, **kwargs):
+        """!
+        @brief Generate spatially uncorrelated samples from the gaussian process.
+        Significantly faster than sample_y() with a large chunk_size.
+        """
+        results = []
+        for x_test in np.array_split(x_tests, int(np.ceil(len(x_tests) / chunk_size)), axis=0):
+            mu = self.predict(x_test)
+            sd = self.predict_sd(x_test, chunk_size=10)
+            res = np.random.normal(loc=mu.flatten(), scale=sd.flatten(), size=(n_draws, len(x_test))).T
+            results.append(res)
+        # expected shape: (len(xtest), n_draws)
+        return np.array(results).reshape(-1, n_draws)
 
 
 def nearestPD(A):
@@ -271,11 +295,11 @@ if __name__ == "__main__":
     my_gpr = gp_regressor()
     my_gpr.fit(Xtrain, ytrain)
 
-    n = 50
+    n = 500
     Xtest = np.linspace(-5, 5, n).reshape(-1,1)
     ytest_mean = my_gpr.predict(Xtest)
 
-    ytest_samples = my_gpr.sample_y(Xtest, n_draws=200)
+    ytest_samples = my_gpr.sample_y_rnd(Xtest, n_draws=200, chunk_size=10)
 
     ytest_sd = my_gpr.predict_sd(Xtest)
 
@@ -310,7 +334,7 @@ if __name__ == "__main__":
     my_gpr_nd = gp_regressor(ndim=2)
     my_gpr_nd.fit(Xtrain, ytrain)
 
-    n = 50
+    n = 100
     Xtest = np.linspace(-5, 5, n)
     xt, yt = np.meshgrid(Xtest, Xtest)
     Xtest = np.array((xt.flatten(), yt.flatten())).T
@@ -342,7 +366,6 @@ if __name__ == "__main__":
     Z = obj_fn_2d(Xtrain)
 
     my_gpr_2d = gp_regressor(ndim=2)
-    import pdb; pdb.set_trace()
     my_gpr_2d.fit(Xtrain, Z, y_sigma=1e-2)
 
     n = 50
