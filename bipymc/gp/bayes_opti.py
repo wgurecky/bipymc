@@ -13,6 +13,7 @@
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
 from mpi4py import MPI
+from itertools import product
 import time
 import sys
 from copy import deepcopy
@@ -122,54 +123,90 @@ class bo_optimizer(object):
         response = self.obj_f(x_grid).flatten()
         return x_grid, response
 
-    def sample_thompson(self, max_depth=2, n=40, mode='min', diag_scale=1e-6):
+    def _chunked_meshgrid(self, *args):
+        return product(*args)
+
+    def _gen_sample_grid(self, p_bounds, n):
+        sample_grid, grid_div_size = [], []
+        for bounds in p_bounds:
+            start, end = bounds[0], bounds[1]
+            search_grid = np.random.uniform(bounds[0], bounds[1], n)
+            div_size = np.abs(np.std(search_grid))
+            grid_div_size.append(div_size)
+            sample_grid.append(search_grid)
+        return sample_grid, grid_div_size
+
+    def sample_thompson(self, max_depth=2, n=100, mode='min', diag_scale=1e-6):
         assert mode in ('min', 'max', 'explore')
         p_bounds = deepcopy(self.param_bounds)
-        for i in range(max_depth):
-            sample_grid, grid_div_size = [], []
-            for bounds in p_bounds:
-                start, end = bounds[0], bounds[1]
-                search_grid = np.random.uniform(bounds[0], bounds[1], n)
-                div_size = np.abs(np.std(search_grid))
-                grid_div_size.append(div_size)
-                sample_grid.append(search_grid)
-            x_mesh = np.meshgrid(*sample_grid)
-            x_mesh_flat = []
-            for x_ in x_mesh:
-                x_mesh_flat.append(x_.flatten())
-            sample_x = np.array(x_mesh_flat).T
-            if i == 0:
-                sample_y = self.gp_model.sample_y(sample_x, diag_scale=diag_scale)
-            else:
-                if mode == 'min':
-                    sample_y = self.gp_model.predict(sample_x).flatten() - \
-                        self.gp_model.predict_sd(sample_x).flatten()
-                if mode == 'max':
-                    sample_y = self.gp_model.predict(sample_x).flatten() + \
-                        self.gp_model.predict_sd(sample_x).flatten()
-            if mode == 'min':
-                # pick location with lowest response
-                idx_best = np.argmin(sample_y)
-            elif mode == 'max':
-                # pick location with highest response
-                idx_best = np.argmax(sample_y)
-            else:
-                # pick location with most varience in response surface
-                sample_yn = self.gp_model.sample_y(sample_x, n_draws=10, diag_scale=diag_scale)
-                idx_best = np.argmax(np.var(sample_yn, axis=1))
-            best_x = sample_x[idx_best]
-            best_y = sample_y[idx_best]
+        for depth in range(max_depth):
+            sample_grid, grid_div_size = self._gen_sample_grid(p_bounds, n)
+
+            # chunked mesh grid, generate 100 points at a time
+            x_mesh_chunk, n_c = [], int(n ** self.dim)
+            results_x, results_y = [], []
+            for c, grid_coord in enumerate(self._chunked_meshgrid(*sample_grid)):
+                x_mesh_chunk.append(grid_coord)
+                if (c + 1) % 50 == 0 or c == n_c - 1:
+                    tmp_x_chunk = np.array(x_mesh_chunk)
+                    tmp_results_x, tmp_results_y = self._gen_thompson_samples(depth, tmp_x_chunk, p_bounds, n, mode, diag_scale, grid_div_size)
+                    results_x.append(tmp_results_x)
+                    results_y.append(tmp_results_y)
+                    x_mesh_chunk = []
+            chunked_x, chunked_y = np.array(results_x).reshape(-1, self.dim), np.array(results_y).reshape(-1, 1)
+            # get best overall result from all chunks
+            idx_best = self._pick_best_idx(chunked_y, mode)
+            best_x = chunked_x[idx_best]
             # collapse p_bounds about best est
             for j in range(len(p_bounds)):
-                p_bounds[j][0] = np.clip(best_x[j] - 0.49 * grid_div_size[j], \
+                p_bounds[j][0] = np.clip(best_x[j] - 0.4 * grid_div_size[j], \
                         self.param_bounds[j][0], self.param_bounds[j][1])
-                p_bounds[j][1] = np.clip(best_x[j] + 0.49 * grid_div_size[j], \
+                p_bounds[j][1] = np.clip(best_x[j] + 0.4 * grid_div_size[j], \
                         self.param_bounds[j][0], self.param_bounds[j][1])
+            # reduce sample size
+            print("Depth=%d, sample_size = %d, max grid size=%f" % (depth, n, np.max(grid_div_size)))
             n /= 2
+            if n < 3:
+                break
         # add jitter to prevent possibility of two samples landing in same loc
-        best_x += np.random.uniform(-1e-12, 1e-12, 1)
-        y_new = self.obj_f(np.array([best_x]))
-        return best_x, y_new
+        best_x += np.random.uniform(-1e-11, 1e-11, 1)
+        best_y = self.obj_f(np.array([best_x]))
+        return best_x, best_y
+
+    def _pick_best_idx(self, sample_y, mode):
+        if mode == 'min':
+            # pick location with lowest response
+            idx_best = np.argmin(sample_y)
+        elif mode == 'max':
+            # pick location with highest response
+            idx_best = np.argmax(sample_y)
+        else:
+            # pick location with most varience in response surface
+            idx_best = np.argmax(sample_y)
+        return idx_best
+
+    def _gen_thompson_samples(self, depth, x_mesh_flat, p_bounds, n, mode, diag_scale, grid_div_size):
+            sample_x = x_mesh_flat # np.array(x_mesh_flat).T
+            if mode == 'explore':
+                # pick location with most varience in response surface
+                sample_yn = self.gp_model.sample_y(sample_x, n_draws=10, diag_scale=diag_scale, chunk_size=1e12)
+                idx_best = np.argmax(np.var(sample_yn, axis=1))
+                best_y = self.gp_model.predict_sd(sample_x[idx_best], chunk_size=1e12)
+            else:
+                if depth == 0:
+                    sample_y = self.gp_model.sample_y(sample_x, diag_scale=diag_scale, chunk_size=1e12)
+                else:
+                    sample_y = self.gp_model.predict(sample_x)
+                if mode == 'min':
+                    # pick location with lowest response
+                    idx_best = np.argmin(sample_y)
+                    best_y = sample_y[idx_best]
+                else:
+                    # pick location with highest response
+                    idx_best = np.argmax(sample_y)
+                    best_y = sample_y[idx_best]
+            best_x = sample_x[idx_best]
+            return best_x, best_y
 
 
 def one_dim_ex():
@@ -230,7 +267,7 @@ def two_dim_ex():
     my_bo = bo_optimizer(obj_fn_2d, dim=2, p_bounds=my_bounds, n_init=1, y_sigma=1e-1, comm=comm)
 
     # run optimizer
-    my_bo.optimize(20)
+    my_bo.optimize(20, n_samples=20, max_depth=4)
     # best estimate
     if comm.rank == 0:
         plt.scatter(my_bo.x_known[:, 0], my_bo.x_known[:, 1], c='r', s=4, alpha=0.8)
@@ -263,5 +300,5 @@ def two_dim_ex():
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    one_dim_ex()
+    # one_dim_ex()
     two_dim_ex()
