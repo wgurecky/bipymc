@@ -1,9 +1,10 @@
 About
 ======
 
-Bayesian Inference for PYthon using Markov Chain Monte Carlo (BiPyMc)
+Bayesian Inference for PYthon using Markov Chain Monte Carlo (BiPyMc).
 
-BiPyMc contains short example implementations of common Markov chain Monte Carlo routines.
+BiPyMc contains short example implementations of common Markov chain Monte Carlo routines.  This package also contains Bayesian optimization routines for 1) finding optimal parameter values when the objective function is too costly for MCMC to be feasible and 2) generating initial parameter guesses for MCMC if the objective function is inexpensive.
+
 This package is intended for educational use only.
 
 Try [emcee](https://arxiv.org/abs/1202.3665),
@@ -17,7 +18,7 @@ Implemented Example MCMC Methods
 - Adaptive Metropolis (AM)
 - Differential Evolution Metropolis (DE-MC)
 - Delayed Rejection Metropolis
-- Delayed Rejection Adaptive Metropolis (DRAM) 
+- Delayed Rejection Adaptive Metropolis (DRAM)
 
 
 References
@@ -31,13 +32,14 @@ rXiv:1710.09486  [https://arxiv.org/pdf/1710.09486.pdf](https://arxiv.org/pdf/17
 Quickstart
 ----------
 
-Install corner for plots (optional).
+Install depends:
 
-    pip install corner
+    pip install corner mpi4py numpy scipy matplotlib
 
-Or
+Or if using conda:
 
     conda install -c astropy corner
+    conda install mpi4py numpy scipy matplotlib
 
 Install and run examples:
 
@@ -47,12 +49,6 @@ Install and run examples:
     python examples/ex_line_fit.py
 
 Optional parallel example:
-
-    pip install mpi4py
-
-Or
-
-    conda install mpi4py
 
     mpirun -np 4 python examples/ex_para_fit.py
 
@@ -66,6 +62,7 @@ Depends
 - mpi4py (optional for parallel DE-MC)
 - matplotlib (optional for plotting)
 - [corner](https://corner.readthedocs.io/en/latest/)  (optional for plotting)
+
 
 License
 --------
