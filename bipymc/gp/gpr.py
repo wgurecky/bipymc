@@ -14,7 +14,8 @@
 from numba import jit
 from scipy.linalg import cho_solve, solve_triangular
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, basinhopping
+
 
 class gp_kernel(object):
     """!
@@ -36,7 +37,8 @@ class gp_kernel(object):
         # defaults to all params must be positive
         p_bounds = []
         for param in self.params:
-            p_bounds.append((0.01, 1e10))
+            p_bounds.append((0.001, 5.0))
+        p_bounds[-1] = (0.001, 1e8)
         return p_bounds
 
     @property
@@ -94,7 +96,7 @@ class squared_exp_noise_mv(gp_kernel):
     """
     def __init__(self, n_dim=1):
         self.ndim = n_dim
-        self._params = np.array(list(np.ones((n_dim))) + [1.0]) * 1e0
+        self._params = np.array(list(np.ones((n_dim)) * 0.2) + [1.0]) * 1e0
         self.n_params = n_dim + 1
 
     def eval(self, a, b, *params):
@@ -130,14 +132,45 @@ class gp_regressor(object):
     Using bayes rule we can update our priors to best match the
     the known sample distribution.
     """
-    def __init__(self, ndim=1):
+    def __init__(self, ndim=1, p_bounds=None):
         self.cov_fn = squared_exp_noise_mv(ndim)
-        self.x_known = np.array([])
+        self.def_scale(p_bounds)
+        self._x_known = np.array([])
         self.y_known = np.array([])
         # cov matrix storage to prevent unnecisasry recalc of cov matrix
         self.K, self.L, self.alpha = None, None, None
 
-    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="TNC"):
+    def def_scale(self, p_bounds):
+        """!
+        @breif Supply scale for each dimension
+        """
+        self.p_bounds = p_bounds
+        if p_bounds is not None:
+            assert len(p_bounds) == self.cov_fn.ndim
+
+    def _x_transform(self, x):
+        if self.p_bounds is not None:
+            p_bounds_min = np.asarray(self.p_bounds)[:, 0]
+            p_bounds_max = np.asarray(self.p_bounds)[:, 1]
+            return (x - p_bounds_min) / (p_bounds_max - p_bounds_min)
+        else:
+            return x
+
+    def x_tr(self, x):
+        """!
+        @brief Alias of _x_transform
+        """
+        return self._x_transform(x)
+
+    @property
+    def x_known(self):
+        return self._x_transform(self._x_known)
+
+    @x_known.setter
+    def x_known(self, x_known):
+        self._x_known = x_known
+
+    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="TNC", **kwargs):
         """
         @brief Fit the kernel's shape params to the known data
         @param x np_ndarray
@@ -151,8 +184,10 @@ class gp_regressor(object):
         self.x_known = x
         self.y_known = y
         self.y_known_sigma = y_sigma
-        neg_log_like_fn = lambda p_list: -1.0 * self.log_like(x, y, p_list)
-        res = minimize(neg_log_like_fn, x0=params_0, bounds=self.cov_fn.param_bounds, method=method, options={'maxiter': 25})
+        neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, y, p_list)
+        res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 0.5), niter_success=10,
+                           niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
+                           minimizer_kwargs={'bounds': self.cov_fn.param_bounds, 'method': method})
         cov_params = res.x
         print("Fitted Cov Fn Params:", cov_params)
         self.cov_fn.params = cov_params
@@ -171,7 +206,8 @@ class gp_regressor(object):
         @param x_test np_ndarray
         """
         assert self.alpha is not None
-        return np.dot(self.cov_fn(self.x_known, x_test).T, self.alpha)
+        x_test_tr = self.x_tr(x_test)
+        return np.dot(self.cov_fn(self.x_known, x_test_tr).T, self.alpha)
 
     def predict_sd(self, x_tests, cov=False, chunk_size=10):
         """
@@ -184,6 +220,7 @@ class gp_regressor(object):
         res = []
         # chunk problem in to smaller problems
         for x_test in np.array_split(x_tests, int(np.ceil(len(x_tests) / chunk_size)), axis=0):
+            x_test = self.x_tr(x_test)
             k_s = self.cov_fn(self.x_known, x_test)
             v = solve_triangular(L, k_s, check_finite=False, lower=True)
             cov_m = self.cov_fn(x_test, x_test) - np.dot(v.T, v)
@@ -221,13 +258,14 @@ class gp_regressor(object):
 
         res = []
         for x_test in np.array_split(x_tests, int(np.ceil(len(x_tests) / chunk_size)), axis=0):
-            K_ss = self.cov_fn(x_test, x_test)
-            K_s = self.cov_fn(self.x_known, x_test)
+            tr_x_test = self.x_tr(x_test)
+            K_ss = self.cov_fn(tr_x_test, tr_x_test)
+            K_s = self.cov_fn(self.x_known, tr_x_test)
             Lk = np.linalg.solve(L, K_s)
             # get the mean prediction
             mu = self.predict(x_test)
             # compute scaling factor for unit-gaussian draws
-            n = len(x_test)
+            n = len(tr_x_test)
             B = np.linalg.cholesky(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk))
             # add tailored gauss noise to mean prediction
             res.append(mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws))))
@@ -331,11 +369,11 @@ if __name__ == "__main__":
 
     Xtrain = np.array((X.flatten(), Y.flatten())).T
     ytrain = Z.flatten()
-    my_gpr_nd = gp_regressor(ndim=2)
+    my_gpr_nd = gp_regressor(ndim=2, p_bounds=((-4., 4.), (-4., 4.)))
     my_gpr_nd.fit(Xtrain, ytrain)
 
     n = 100
-    Xtest = np.linspace(-5, 5, n)
+    Xtest = np.linspace(-4.1, 4.1, n)
     xt, yt = np.meshgrid(Xtest, Xtest)
     Xtest = np.array((xt.flatten(), yt.flatten())).T
     ytest_mean = my_gpr_nd.predict(Xtest)
@@ -369,7 +407,7 @@ if __name__ == "__main__":
     my_gpr_2d.fit(Xtrain, Z, y_sigma=1e-2)
 
     n = 50
-    Xtest = np.linspace(-5, 5, n)
+    Xtest = np.linspace(-4.0, 4.0, n)
     xt, yt = np.meshgrid(Xtest, Xtest)
     Xtest = np.array((xt.flatten(), yt.flatten())).T
     ytest_mean = my_gpr_2d.predict(Xtest)

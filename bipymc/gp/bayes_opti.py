@@ -39,7 +39,7 @@ class bo_optimizer(object):
 
     def _init_gp(self, x0, y0, dim, n_init, **kwargs):
         # setup gp model
-        self.gp_model = gp_regressor(ndim=dim)
+        self.gp_model = gp_regressor(ndim=dim, p_bounds=self.param_bounds)
         # eval obj fn n_init times to seed the method
         if x0 is not None:
             self.x_known = x0
@@ -300,5 +300,5 @@ def two_dim_ex():
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    # one_dim_ex()
+    one_dim_ex()
     two_dim_ex()
