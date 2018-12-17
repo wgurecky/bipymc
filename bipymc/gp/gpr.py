@@ -37,7 +37,7 @@ class gp_kernel(object):
         # defaults to all params must be positive
         p_bounds = []
         for param in self.params:
-            p_bounds.append((0.001, 5.0))
+            p_bounds.append((0.01, 5.0))
         p_bounds[-1] = (0.001, 1e8)
         return p_bounds
 
@@ -182,11 +182,14 @@ class gp_regressor(object):
         else:
             params_0 = self.cov_fn.params
         self.x_known = x
-        self.y_shift = np.mean(y)
+        if kwargs.get("y_shift", True):
+            self.y_shift = np.mean(y)
+        else:
+            self.y_shift = 0.0
         self.y_known = y - self.y_shift
         self.y_known_sigma = y_sigma
         neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, y, p_list)
-        res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.5), niter_success=12,
+        res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
                            niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
                            minimizer_kwargs={'bounds': self.cov_fn.param_bounds, 'method': method})
         cov_params = res.x
@@ -332,7 +335,7 @@ if __name__ == "__main__":
     ytrain = np.sin(Xtrain)
 
     my_gpr = gp_regressor()
-    my_gpr.fit(Xtrain, ytrain)
+    my_gpr.fit(Xtrain, ytrain, p_bounds=((-4., 4.),))
 
     n = 500
     Xtest = np.linspace(-5, 5, n).reshape(-1,1)
@@ -345,7 +348,7 @@ if __name__ == "__main__":
     plt.figure()
     plt.plot(Xtest, ytest_mean, label="mean")
     for y_test in ytest_samples.T:
-        plt.plot(Xtest, y_test, lw=0.1, ls='-', c='k', alpha=0.7)
+        plt.plot(Xtest, y_test, lw=0.1, ls='-', c='k', alpha=0.05)
     plt.plot(Xtest, ytest_mean.flatten() + 3.0 * ytest_sd, c='r', label=r"$\pm3\sigma$")
     plt.plot(Xtest, ytest_mean.flatten() - 3.0 * ytest_sd, c='r')
     plt.scatter(Xtrain, ytrain, label="train")
