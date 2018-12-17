@@ -28,6 +28,8 @@ class bo_optimizer(object):
     def __init__(self, f, dim, p_bounds, x0=None, y0=None, n_init=2,
                  fn_args=[], fn_kwargs={}, comm=MPI.COMM_WORLD, **kwargs):
         # minimize or maximize fn flag
+        self.gp_fit_kwargs = kwargs.get("gp_fit_kwargs", {'T': 4.0, 'niter': 30})
+        assert isinstance(self.gp_fit_kwargs, dict)
         self.minimize = kwargs.get("min", True)
         self.comm = comm
         # setup obj function and parameter bounds
@@ -48,7 +50,7 @@ class bo_optimizer(object):
             self.x_known, self.y_known = self.sample_uniform(n_init)
         # fit the gp model to initial seed points
         self.y_sigma = kwargs.get("y_sigma", 1e-8)
-        self.gp_model.fit(self.x_known, self.y_known.flatten(), self.y_sigma)
+        self.gp_model.fit(self.x_known, self.y_known.flatten(), self.y_sigma, **self.gp_fit_kwargs)
 
     @property
     def param_bounds(self):
@@ -95,7 +97,7 @@ class bo_optimizer(object):
             self.y_known = np.concatenate((self.y_known, all_y_proposal))
 
             # fit GP to current data
-            self.gp_model.fit(self.x_known, self.y_known.flatten(), self.y_sigma)
+            self.gp_model.fit(self.x_known, self.y_known.flatten(), self.y_sigma, **self.gp_fit_kwargs)
 
             # print mins
             if self.comm.rank == 0:
@@ -169,7 +171,7 @@ class bo_optimizer(object):
             if n < 3:
                 break
         # add jitter to prevent possibility of two samples landing in same loc
-        best_x += np.random.uniform(-1e-11, 1e-11, 1)
+        best_x += np.random.uniform(-1e-8, 1e-8, 1)
         best_y = self.obj_f(np.array([best_x]))
         return best_x, best_y
 

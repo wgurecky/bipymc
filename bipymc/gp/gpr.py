@@ -182,10 +182,11 @@ class gp_regressor(object):
         else:
             params_0 = self.cov_fn.params
         self.x_known = x
-        self.y_known = y
+        self.y_shift = np.mean(y)
+        self.y_known = y - self.y_shift
         self.y_known_sigma = y_sigma
         neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, y, p_list)
-        res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 0.5), niter_success=10,
+        res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.5), niter_success=12,
                            niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
                            minimizer_kwargs={'bounds': self.cov_fn.param_bounds, 'method': method})
         cov_params = res.x
@@ -207,7 +208,7 @@ class gp_regressor(object):
         """
         assert self.alpha is not None
         x_test_tr = self.x_tr(x_test)
-        return np.dot(self.cov_fn(self.x_known, x_test_tr).T, self.alpha)
+        return np.dot(self.cov_fn(self.x_known, x_test_tr).T, self.alpha) + self.y_shift
 
     def predict_sd(self, x_tests, cov=False, chunk_size=10):
         """
