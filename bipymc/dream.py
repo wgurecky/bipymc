@@ -15,7 +15,7 @@ class DreamMpi(DeMcMpi):
     """
     def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8,
                  mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
-        self.del_pairs = kwargs.get("del_pairs", 40)
+        self.del_pairs = kwargs.get("del_pairs", 3)
         super(DreamMpi, self).__init__(ln_like_fn, theta_0=theta_0, varepsilon=varepsilon, n_chains=n_chains,
                  mpi_comm=mpi_comm, ln_kwargs=ln_kwargs, **kwargs)
 
@@ -27,8 +27,9 @@ class DreamMpi(DeMcMpi):
         @param current_chain  bipymc.samplers.McmcChain instance
         @param prop_chain_pool  np_ndarray  proposal states
         """
-        cr_prob = kwargs.get("cr_prob", 0.8)
+        cr_prob = kwargs.get("cr_prob", 0.9)
         epsilon = kwargs.get("epsilon", 1e-15)
+        u_epsilon = kwargs.get("u_epsilon", 1e-6)
         d_prime = deepcopy(self.dim)
         # ensure the current chain is not in the proposal chain pool
         valid_pool_ids = np.array(range(len(prop_chain_pool)))
@@ -48,12 +49,12 @@ class DreamMpi(DeMcMpi):
 
         # Every 5th step has chance to take large exploration step
         if k % 5 == 0:
-            gamma = np.random.choice([gamma_base, 1.0], p=[0.1, 0.9])
+            gamma = np.random.choice([gamma_base, 1.0], p=[0.01, 0.99])
         else:
             gamma = gamma_base
 
         # Generate proposal vector
-        eps_u = McmcChain.var_box(epsilon, self.dim)
+        eps_u = McmcChain.var_box(u_epsilon, self.dim)
         eps_n = McmcChain.var_ball(epsilon ** 2.0, self.dim)
         prop_vector = (np.ones(self.dim) + eps_u) * gamma * (mut_a_chain_state - mut_b_chain_state)
         prop_vector += eps_n
@@ -61,6 +62,9 @@ class DreamMpi(DeMcMpi):
         # choose subset of dimensions to update
         # flip unfair coin for each dim
         cr_mask = np.random.choice([True, False], p=[cr_prob, 1.0 - cr_prob], size=self.dim)
+        if np.count_nonzero(cr_mask) == 0:
+            rand_idx = np.random.choice(range(len(cr_mask)))
+            cr_mask[rand_idx] = True
         d_prime = np.count_nonzero(cr_mask)
         prop_vector[cr_mask] += current_chain.current_pos[cr_mask]
         prop_vector[~cr_mask] = current_chain.current_pos[~cr_mask]

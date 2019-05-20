@@ -133,11 +133,11 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     theta_0 = np.array(list(theta_0) + [sigma_0])
 
     # Run MCMC
-    #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
+    #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
     #             varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
-    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
-                 varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
-    my_mcmc.run_mcmc(2000 * 100, suffle=True, flip=0.1)
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*4, mpi_comm=comm,
+                 varepsilon=1e-8, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
+    my_mcmc.run_mcmc(1000 * 100, suffle=True, flip=0.5)
 
     # Run MCMC
     # my_mcmc = DeMc(lnprob, n_chains=comm.size*10, mpi_comm=comm,
@@ -149,7 +149,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
         ndim, nwalkers = 5, 100
         pos = [theta_0 + 1e-6*np.random.randn(ndim) for i in range(nwalkers)]
         sampler = EnsembleSampler(nwalkers, ndim, lnprob, args=(t_data, y_data))
-        sampler.run_mcmc(pos, 1000)
+        sampler.run_mcmc(pos, 1000)  # 100 * 1000 tot samples
         samples = sampler.chain[:, 400:, :].reshape((-1, ndim))
         fig = corner.corner(samples, labels=["$\tau$", "$c_\infty$", "$c_0$", "l", r"$\sigma$"])
         fig.savefig("exp_emcee_out.png")
@@ -160,7 +160,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     # view results
     print("=== Opti values by Bipymc MCMC ===")
     print("[tau, c_inf, c_0, leakage]:")
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=40000)
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=400 * 100)
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
     if comm.rank == 0:
         print("MCMC Esimated params: %s" % str(theta_est))

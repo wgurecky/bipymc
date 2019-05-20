@@ -71,7 +71,7 @@ class DeMcMpi(DeMc):
         shuffle = kwargs.get("shuffle", True)
         epsilon = kwargs.get("epsilon", 1e-15)
 
-        # Parallel DE-MC algo with emcee modification
+        # Parallel DE-MC algo with emcee modification (a/b chain pools)
         j, k_gen = 0, 0
         while j < int((n - self.n_chains) / self.comm.size):
             # chance to flib a/b chain groups
