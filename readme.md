@@ -24,6 +24,8 @@ Implemented Example MCMC Methods
 References
 -----------
 
+Vrugt. J. Braak C. et al. [Accelerating Markov Chain Monte Carlo Simulation by Differential Evolution with Self-Adaptive Randomized Subspace Sampling](https://permalink.lanl.gov/object/tr?what=info:lanl-repo/lareport/LA-UR-08-07126)
+
 Braak, C.J.F.T. Statistics and Computing (2006) 16: 239. [https://doi.org/10.1007/s11222-006-8769-1](https://doi.org/10.1007/s11222-006-8769-1)
 
 rXiv:1710.09486  [https://arxiv.org/pdf/1710.09486.pdf](https://arxiv.org/pdf/1710.09486.pdf)
