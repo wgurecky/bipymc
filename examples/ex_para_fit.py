@@ -136,7 +136,8 @@ def sample_gauss(mcmc_algo, comm):
 
     if comm.rank == 0: print("========== SAMPLE GAUSSI ===========")
     theta_0 = np.array([1.0])
-    my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*4, mpi_comm=comm)
+    # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*4, mpi_comm=comm)
+    my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*8, mpi_comm=comm)
     my_mcmc.run_mcmc(4000)
 
     # view results

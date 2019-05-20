@@ -39,6 +39,17 @@ class McmcChain(object):
                                                         size=1)[0]
         return var_epsilon
 
+    @staticmethod
+    def var_box(varepsilon, dim):
+        """!
+        @brief Draw single sample from tight uniform box
+        """
+        var_epsilon = 0.
+        if varepsilon > 0:
+            var_epsilon = np.random.uniform(low=-varepsilon * np.ones(dim),
+                                            high=varepsilon * np.ones(dim))
+        return var_epsilon
+
     def set_t_kernel(self, t_kernel):
         """!
         @brief Set valid transition kernel

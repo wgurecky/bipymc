@@ -131,7 +131,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     theta_0 = np.array(list(theta_0) + [sigma_0])
 
     # Run MCMC
-    my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
+    my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
                  varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
     my_mcmc.run_mcmc(2000 * 100, suffle=True, flip=0.1)
 
@@ -236,7 +236,7 @@ def gen_initial_guess_bo():
         return np.array(r).flatten()
     my_bounds = ((10, 50), (0.1, 1.0), (-1.0, 1.0), (-1e-3, 0.0))
     my_bo = bo_optimizer(model_resid, dim=4, p_bounds=my_bounds, n_init=2, y_sigma=1e-2)
-    popt = my_bo.optimize(40, n_samples=8, max_depth=3, diag_scale=1e-4, mode='min')
+    popt = my_bo.optimize(40, n_samples=20, max_depth=3, diag_scale=1e-4, mode='min')
 
     print("=== Opti values by bayesian opt ===")
     print("[tau, c_inf, c_0, leakage]:")
@@ -255,5 +255,5 @@ def read_data(file_name = 'concentration_data.mat', drop=10, col=3):
 
 if __name__ == "__main__":
     popt = gen_initial_guess()
-    popt_bo = gen_initial_guess_bo()
-    fit_exp_data(popt_bo, "DE-MC")
+    # popt_bo = gen_initial_guess_bo()
+    fit_exp_data(popt, "DE-MC")
