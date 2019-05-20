@@ -5,11 +5,13 @@ import scipy.stats as stats
 from mpi4py import MPI
 try:
     from bipymc.demc import DeMcMpi
+    from bipymc.dream import DreamMpi
     from bipymc.mc_plot import mc_plot
 except:
     # add to path
     sys.path.append('../.')
     from bipymc.demc import DeMcMpi
+    from bipymc.dream import DreamMpi
     from bipymc.mc_plot import mc_plot
 np.random.seed(42)
 
@@ -71,7 +73,9 @@ def fit_line(mcmc_algo, comm):
     # === EXAMPLE 1 ===
     if comm.rank == 0: print("========== FIT LIN MODEL 1 ===========")
     theta_0 = np.array([4.0, -0.5])
-    my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*10, mpi_comm=comm,
+    #my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*10, mpi_comm=comm,
+    #                  inflate=1e1, ln_kwargs={'data': y})
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*10, mpi_comm=comm,
                       inflate=1e1, ln_kwargs={'data': y})
     my_mcmc.run_mcmc(500 * 100)
 
@@ -98,7 +102,9 @@ def fit_line(mcmc_algo, comm):
     comm.Barrier()
     if comm.rank == 0: print("========== FIT LIN MODEL 2 ===========")
     theta_0 = np.array([-0.8, 4.5, 0.2])
-    my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
+    #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
+    #                  ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
                       ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
     my_mcmc.run_mcmc(500 * 100)
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=10000)
@@ -136,8 +142,8 @@ def sample_gauss(mcmc_algo, comm):
 
     if comm.rank == 0: print("========== SAMPLE GAUSSI ===========")
     theta_0 = np.array([1.0])
-    # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*4, mpi_comm=comm)
-    my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*8, mpi_comm=comm)
+    # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*8, mpi_comm=comm)
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*8, mpi_comm=comm)
     my_mcmc.run_mcmc(4000)
 
     # view results

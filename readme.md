@@ -23,8 +23,9 @@ Implemented Example MCMC Methods
 
 References
 -----------
+J. Vurgt and C. Braak. [Adaptive Markov Chain Monte Carlo simulation algorithm to solve discrete, noncontinuous, and combinatorial posterior parameter estimation problems](http://faculty.sites.uci.edu/jasper/files/2016/04/70.pdf)
 
-Vrugt. J. Braak C. et al. [Accelerating Markov Chain Monte Carlo Simulation by Differential Evolution with Self-Adaptive Randomized Subspace Sampling](https://permalink.lanl.gov/object/tr?what=info:lanl-repo/lareport/LA-UR-08-07126)
+J. Vrugt., C. Braak, et al. [Accelerating Markov Chain Monte Carlo Simulation by Differential Evolution with Self-Adaptive Randomized Subspace Sampling](https://permalink.lanl.gov/object/tr?what=info:lanl-repo/lareport/LA-UR-08-07126)
 
 Braak, C.J.F.T. Statistics and Computing (2006) 16: 239. [https://doi.org/10.1007/s11222-006-8769-1](https://doi.org/10.1007/s11222-006-8769-1)
 

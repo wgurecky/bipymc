@@ -20,6 +20,7 @@ comm = MPI.COMM_WORLD
 try:
     from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
     from bipymc.demc import DeMcMpi
+    from bipymc.dream import DreamMpi
     from bipymc.gp.bayes_opti import bo_optimizer
     from bipymc.mc_plot import mc_plot
 except:
@@ -27,6 +28,7 @@ except:
     sys.path.append('../.')
     from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
     from bipymc.demc import DeMcMpi
+    from bipymc.dream import DreamMpi
     from bipymc.gp.bayes_opti import bo_optimizer
     from bipymc.mc_plot import mc_plot
 np.random.seed(42)
@@ -131,7 +133,9 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     theta_0 = np.array(list(theta_0) + [sigma_0])
 
     # Run MCMC
-    my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
+    #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
+    #             varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
                  varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
     my_mcmc.run_mcmc(2000 * 100, suffle=True, flip=0.1)
 
