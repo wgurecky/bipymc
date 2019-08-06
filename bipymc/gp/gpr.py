@@ -15,6 +15,7 @@ from numba import jit
 from scipy.linalg import cho_solve, solve_triangular
 import numpy as np
 from scipy.optimize import minimize, basinhopping
+from scipydirect import minimize as ncsu_direct_min
 
 
 class gp_kernel(object):
@@ -38,7 +39,7 @@ class gp_kernel(object):
         p_bounds = []
         for param in self.params:
             p_bounds.append((0.01, 5.0))
-        p_bounds[-1] = (0.001, 1e8)
+        p_bounds[-1] = (0.001, 1e2)
         return p_bounds
 
     @property
@@ -170,7 +171,7 @@ class gp_regressor(object):
     def x_known(self, x_known):
         self._x_known = x_known
 
-    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="TNC", **kwargs):
+    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="direct", **kwargs):
         """
         @brief Fit the kernel's shape params to the known data
         @param x np_ndarray
@@ -189,9 +190,12 @@ class gp_regressor(object):
         self.y_known = y - self.y_shift
         self.y_known_sigma = y_sigma
         neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, y, p_list)
-        res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
-                           niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
-                           minimizer_kwargs={'bounds': self.cov_fn.param_bounds, 'method': method})
+        if method == 'direct' or method == 'ncsu':
+            res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds, maxf=kwargs.get('maxf', 30))
+        else:
+            res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
+                               niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
+                               minimizer_kwargs={'bounds': self.cov_fn.param_bounds, 'method': method})
         cov_params = res.x
         print("Fitted Cov Fn Params:", cov_params)
         self.cov_fn.params = cov_params
@@ -330,9 +334,11 @@ def isPD(B):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+    from sklearn.gaussian_process import GaussianProcessRegressor
+    from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel
     # sin test data
     Xtrain = np.random.uniform(-4, 4, 10).reshape(-1,1)
-    ytrain = np.sin(Xtrain)
+    ytrain = np.sin(Xtrain) #+ np.random.uniform(-1e-2, 1e-2, Xtrain.size)
 
     my_gpr = gp_regressor()
     my_gpr.fit(Xtrain, ytrain, p_bounds=((-4., 4.),))
@@ -355,6 +361,21 @@ if __name__ == "__main__":
     plt.grid(axis='both', ls='--', alpha=0.5)
     plt.legend()
     plt.savefig("gp_sin_test.png")
+    plt.close()
+
+    # check agains sklearn
+    kernel = ConstantKernel(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-2, 1e3))
+    sk_gpr_1d = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=200)
+    sk_gpr_1d.fit(Xtrain, ytrain)
+    ytest_mean_sk, ytest_sd_sk = sk_gpr_1d.predict(Xtest, return_std=True)
+    plt.figure()
+    plt.plot(Xtest, ytest_mean_sk, label="mean")
+    plt.plot(Xtest, ytest_mean_sk.flatten() + 3.0 * ytest_sd_sk, c='r', label=r"$\pm3\sigma$")
+    plt.plot(Xtest, ytest_mean_sk.flatten() - 3.0 * ytest_sd_sk, c='r')
+    plt.scatter(Xtrain, ytrain, label="train")
+    plt.grid(axis='both', ls='--', alpha=0.5)
+    plt.legend()
+    plt.savefig("gp_sin_test_sk.png")
     plt.close()
 
     # 2d test
@@ -432,8 +453,7 @@ if __name__ == "__main__":
     plt.close()
 
     # sk-learn compare
-    from sklearn.gaussian_process import GaussianProcessRegressor
-    sk_gpr = GaussianProcessRegressor()
+    sk_gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=200)
     sk_gpr.fit(Xtrain, Z)
     zt = sk_gpr.predict(Xtest).reshape(xt.shape)
 

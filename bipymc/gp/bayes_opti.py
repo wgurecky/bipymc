@@ -132,7 +132,7 @@ class bo_optimizer(object):
         sample_grid, grid_div_size = [], []
         for bounds in p_bounds:
             start, end = bounds[0], bounds[1]
-            search_grid = np.random.uniform(bounds[0], bounds[1], n)
+            search_grid = np.random.uniform(bounds[0], bounds[1], int(n))
             div_size = np.abs(np.std(search_grid))
             grid_div_size.append(div_size)
             sample_grid.append(search_grid)
