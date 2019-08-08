@@ -20,6 +20,7 @@ comm = MPI.COMM_WORLD
 try:
     from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
     from bipymc.demc import DeMcMpi
+    from bipymc.dream import DreamMpi
     from bipymc.gp.bayes_opti import bo_optimizer
     from bipymc.mc_plot import mc_plot
 except:
@@ -27,6 +28,7 @@ except:
     sys.path.append('../.')
     from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
     from bipymc.demc import DeMcMpi
+    from bipymc.dream import DreamMpi
     from bipymc.gp.bayes_opti import bo_optimizer
     from bipymc.mc_plot import mc_plot
 np.random.seed(42)
@@ -131,9 +133,11 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     theta_0 = np.array(list(theta_0) + [sigma_0])
 
     # Run MCMC
-    my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
-                 varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
-    my_mcmc.run_mcmc(2000 * 100, suffle=True, flip=0.1)
+    #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
+    #             varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*4, mpi_comm=comm,
+                 varepsilon=1e-8, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
+    my_mcmc.run_mcmc(1000 * 100, suffle=True, flip=0.5)
 
     # Run MCMC
     # my_mcmc = DeMc(lnprob, n_chains=comm.size*10, mpi_comm=comm,
@@ -145,7 +149,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
         ndim, nwalkers = 5, 100
         pos = [theta_0 + 1e-6*np.random.randn(ndim) for i in range(nwalkers)]
         sampler = EnsembleSampler(nwalkers, ndim, lnprob, args=(t_data, y_data))
-        sampler.run_mcmc(pos, 1000)
+        sampler.run_mcmc(pos, 1000)  # 100 * 1000 tot samples
         samples = sampler.chain[:, 400:, :].reshape((-1, ndim))
         fig = corner.corner(samples, labels=["$\tau$", "$c_\infty$", "$c_0$", "l", r"$\sigma$"])
         fig.savefig("exp_emcee_out.png")
@@ -156,7 +160,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     # view results
     print("=== Opti values by Bipymc MCMC ===")
     print("[tau, c_inf, c_0, leakage]:")
-    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=40000)
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=400 * 100)
     theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
     if comm.rank == 0:
         print("MCMC Esimated params: %s" % str(theta_est))
@@ -236,7 +240,7 @@ def gen_initial_guess_bo():
         return np.array(r).flatten()
     my_bounds = ((10, 50), (0.1, 1.0), (-1.0, 1.0), (-1e-3, 0.0))
     my_bo = bo_optimizer(model_resid, dim=4, p_bounds=my_bounds, n_init=2, y_sigma=1e-2)
-    popt = my_bo.optimize(40, n_samples=8, max_depth=3, diag_scale=1e-4, mode='min')
+    popt = my_bo.optimize(40, n_samples=20, max_depth=3, diag_scale=1e-4, mode='min')
 
     print("=== Opti values by bayesian opt ===")
     print("[tau, c_inf, c_0, leakage]:")
@@ -255,5 +259,5 @@ def read_data(file_name = 'concentration_data.mat', drop=10, col=3):
 
 if __name__ == "__main__":
     popt = gen_initial_guess()
-    popt_bo = gen_initial_guess_bo()
-    fit_exp_data(popt_bo, "DE-MC")
+    # popt_bo = gen_initial_guess_bo()
+    fit_exp_data(popt, "DE-MC")
