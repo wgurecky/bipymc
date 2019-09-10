@@ -12,6 +12,7 @@
 # AUTHOR: William Gurecky
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
+from __future__ import division
 from mpi4py import MPI
 from itertools import product
 import time
@@ -143,6 +144,7 @@ class bo_optimizer(object):
         res = ncsu_direct_min(gp_sf, bounds=sb,
                               maxf=n, algmethod=kwargs.get('algmethod', 1))
         best_x = res.x
+        # add jitter to prevent possibility of two samples landing in same loc
         x_purt = kwargs.get("x_purt", 1e-8)
         best_x += np.random.uniform(-x_purt, x_purt, 1)
         best_y = self.obj_f(np.array([best_x]))

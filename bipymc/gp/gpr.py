@@ -11,6 +11,7 @@
 # AUTHOR: William Gurecky
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
+from __future__ import division
 from numba import jit
 from scipy.linalg import cho_solve, solve_triangular
 import numpy as np
