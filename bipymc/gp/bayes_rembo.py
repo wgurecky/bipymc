@@ -94,13 +94,13 @@ class rembo_optimizer(bo_optimizer):
         """
         d_e_search_bounds = []
         for i in range(self.d_e):
-            d_e_search_bounds.append([-np.sqrt(self.d_e), np.sqrt(d_e)])
+            d_e_search_bounds.append([-np.sqrt(self.d_e), np.sqrt(self.d_e)])
         return np.asarray(d_e_search_bounds)
 
 
 class rembo_swarm(object):
     """!
     @brief A collection of rembo optimizers.  Each optimizer minimizes the
-    target function on a random embedded /s
-    def 
-
+    target function on a random embedded flat surface
+    """
+    pass

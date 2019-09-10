@@ -133,7 +133,8 @@ class gp_regressor(object):
     Using bayes rule we can update our priors to best match the
     the known sample distribution.
     """
-    def __init__(self, ndim=1, domain_bounds=None):
+    def __init__(self, ndim=1, domain_bounds=None, **kwargs):
+        self.verbose = kwargs.get("verbose", True)
         self.cov_fn = squared_exp_noise_mv(ndim)
         self.def_scale(domain_bounds)
         self._x_known = np.array([])
@@ -155,6 +156,7 @@ class gp_regressor(object):
             domain_bounds_max = np.asarray(self.domain_bounds)[:, 1]
             return (x - domain_bounds_min) / (domain_bounds_max - domain_bounds_min)
         else:
+            if self.verbose: print("WARNING: No bounds specified for GP")
             return x
 
     def x_tr(self, x):
@@ -189,10 +191,10 @@ class gp_regressor(object):
             self.y_shift = 0.0
         self.y_known = y - self.y_shift
         self.y_known_sigma = y_sigma
-        neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, y, p_list)
+        neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list)
         if method == 'direct' or method == 'ncsu':
             res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds,
-                                  maxf=kwargs.get('maxf', 50), algmethod=kwargs.get('algmethod', 1))
+                                  maxf=kwargs.get('maxf', 600), algmethod=kwargs.get('algmethod', 1))
         else:
             res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
                                niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
@@ -344,7 +346,7 @@ if __name__ == "__main__":
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel
     # sin test data
-    Xtrain = np.random.uniform(-4, 4, 5).reshape(-1,1)
+    Xtrain = np.random.uniform(-4, 4, 10).reshape(-1,1)
     ytrain = np.sin(Xtrain) #+ np.random.uniform(-1e-2, 1e-2, Xtrain.size)
 
     my_gpr = gp_regressor(domain_bounds=((-4., 4.),))
