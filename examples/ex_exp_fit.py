@@ -135,7 +135,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     # Run MCMC
     #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
     #             varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
-    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*4, mpi_comm=comm,
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
                  varepsilon=1e-8, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
     my_mcmc.run_mcmc(1000 * 100, suffle=True, flip=0.5)
 

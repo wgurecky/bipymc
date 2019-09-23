@@ -18,7 +18,7 @@ import time
 import sys
 from copy import deepcopy
 import numpy as np
-from gpr import *
+from bipymc.gp.gpr import *
 
 
 class bo_optimizer(object):
