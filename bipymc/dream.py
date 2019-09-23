@@ -16,6 +16,8 @@ class DreamMpi(DeMcMpi):
     def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8,
                  mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
         self.del_pairs = kwargs.get("del_pairs", 3)
+        self.burnin_gen = kwargs.get("burnin_gen", 1000)
+        self.p_cr_update_gen = kwargs.get("n_cr_gen", 120)
         self.n_cr = kwargs.get("n_cr", 3)
         super(DreamMpi, self).__init__(ln_like_fn, theta_0=theta_0, varepsilon=varepsilon, n_chains=n_chains,
                  mpi_comm=mpi_comm, ln_kwargs=ln_kwargs, **kwargs)
@@ -78,7 +80,7 @@ class DreamMpi(DeMcMpi):
         prop_vector += current_chain.current_pos
 
         # update crossover probablity
-        if self.in_burnin:
+        if self.burnin_gen > k:
             self._update_cr_ratios(current_chain, prop_vector, cr)
 
         # Metropolis ratio
@@ -109,8 +111,8 @@ class DreamMpi(DeMcMpi):
         """!
         @brief Adapt crossover probs, p_cr
         """
-        n_samples = len(current_chain.chain)
-        if n_samples > 200:
+        n_gen = len(current_chain.chain)
+        if n_gen > self.p_cr_update_gen:
             cr_idx = np.where(self.CR == cr)
             self.n_cr_updates[cr_idx] += 1.0
 
@@ -127,7 +129,6 @@ class DreamMpi(DeMcMpi):
 
             # normalize
             self.p_cr /= np.sum(self.p_cr)
-            print(self.p_cr)
 
     @property
     def in_burnin(self):

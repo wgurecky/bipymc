@@ -166,6 +166,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
         print("MCMC Esimated params: %s" % str(theta_est))
         print("MCMC Estimated params sigma: %s " % str(sig_est))
         print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
+        print("P_cr: %s" % str(my_mcmc.p_cr))
         # vis the parameter estimates
         mc_plot.plot_mcmc_params(chain,
                 labels=[r"$\tau$", "$c_\infty$", "$c_0$", "leak", r"$\sigma$"],
