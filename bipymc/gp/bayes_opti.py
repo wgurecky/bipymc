@@ -40,6 +40,14 @@ class bo_optimizer(object):
         self.obj_f = lambda x: f(x, *fn_args, **fn_kwargs)
         self._init_gp(x0, y0, dim, n_init, **kwargs)
 
+    @property
+    def x_known(self):
+        return self._x_known
+
+    @x_known.setter
+    def x_known(self, x_known):
+        self._x_known = x_known
+
     def _init_gp(self, x0, y0, dim, n_init, **kwargs):
         # setup gp model
         self.gp_model = gp_regressor(ndim=dim, domain_bounds=self.search_bounds)
@@ -70,7 +78,8 @@ class bo_optimizer(object):
         assert len(s_bounds[0]) == 2
         self._s_bounds = list(list(p_b) for p_b in s_bounds)
 
-    def optimize(self, n_iter=10, n_samples=100, max_depth=2, mode='min', diag_scale=1e-6, method='direct'):
+    def optimize(self, n_iter=10, n_samples=100, max_depth=2, mode='min', diag_scale=1e-6,
+                 method='direct', return_y=False):
         for i in range(n_iter):
             self.comm.Barrier()
             # everyone get a proposal sample
@@ -119,6 +128,8 @@ class bo_optimizer(object):
             best_idx = np.argmin(self.y_known)
         else:
             best_idx = np.argmax(self.y_known)
+        if return_y:
+            return self.x_known[best_idx], self.y_known[best_idx]
         return self.x_known[best_idx]
 
     def sample_thompson_direct(self, n=400, mode='min', diag_scale=1e-6, **kwargs):
