@@ -38,8 +38,8 @@ class gp_kernel(object):
         # defaults to all params must be positive
         p_bounds = []
         for param in self.params:
-            p_bounds.append((0.01, 5.0))
-        p_bounds[-1] = (0.001, 1e2)
+            p_bounds.append((0.01, 2.0))
+        p_bounds[-1] = (0.001, 2.0)
         return p_bounds
 
     @property
@@ -191,7 +191,7 @@ class gp_regressor(object):
         self.y_known_sigma = y_sigma
         neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, y, p_list)
         if method == 'direct' or method == 'ncsu':
-            res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds, maxf=kwargs.get('maxf', 30))
+            res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds, maxf=kwargs.get('maxf', 100), algmethod=1)
         else:
             res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
                                niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
@@ -337,7 +337,7 @@ if __name__ == "__main__":
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel
     # sin test data
-    Xtrain = np.random.uniform(-4, 4, 10).reshape(-1,1)
+    Xtrain = np.random.uniform(-4, 4, 5).reshape(-1,1)
     ytrain = np.sin(Xtrain) #+ np.random.uniform(-1e-2, 1e-2, Xtrain.size)
 
     my_gpr = gp_regressor()

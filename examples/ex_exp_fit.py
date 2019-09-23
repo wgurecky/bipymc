@@ -135,7 +135,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     # Run MCMC
     #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
     #             varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
-    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*4, mpi_comm=comm,
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
                  varepsilon=1e-8, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
     my_mcmc.run_mcmc(1000 * 100, suffle=True, flip=0.5)
 
@@ -166,6 +166,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
         print("MCMC Esimated params: %s" % str(theta_est))
         print("MCMC Estimated params sigma: %s " % str(sig_est))
         print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
+        print("P_cr: %s" % str(my_mcmc.p_cr))
         # vis the parameter estimates
         mc_plot.plot_mcmc_params(chain,
                 labels=[r"$\tau$", "$c_\infty$", "$c_0$", "leak", r"$\sigma$"],
