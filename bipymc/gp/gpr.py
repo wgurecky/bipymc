@@ -11,6 +11,7 @@
 # AUTHOR: William Gurecky
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
+from __future__ import division
 from numba import jit
 from scipy.linalg import cho_solve, solve_triangular
 import numpy as np
@@ -38,8 +39,8 @@ class gp_kernel(object):
         # defaults to all params must be positive
         p_bounds = []
         for param in self.params:
-            p_bounds.append((0.01, 2.0))
-        p_bounds[-1] = (0.001, 2.0)
+            p_bounds.append((0.005, 2.0))
+        p_bounds[-1] = (0.001, 1e2)
         return p_bounds
 
     @property
@@ -95,7 +96,7 @@ class squared_exp_noise_mv(gp_kernel):
     @brief Squared exponential kernel with extra noise parameter with
         individual length scale parameters for each input dimension.
     """
-    def __init__(self, n_dim=1):
+    def __init__(self, n_dim=1, params_0=None, params_bounds=None):
         self.ndim = n_dim
         self._params = np.array(list(np.ones((n_dim)) * 0.2) + [1.0]) * 1e0
         self.n_params = n_dim + 1
@@ -133,28 +134,30 @@ class gp_regressor(object):
     Using bayes rule we can update our priors to best match the
     the known sample distribution.
     """
-    def __init__(self, ndim=1, p_bounds=None):
+    def __init__(self, ndim=1, domain_bounds=None, **kwargs):
+        self.verbose = kwargs.get("verbose", True)
         self.cov_fn = squared_exp_noise_mv(ndim)
-        self.def_scale(p_bounds)
+        self.def_scale(domain_bounds)
         self._x_known = np.array([])
         self.y_known = np.array([])
         # cov matrix storage to prevent unnecisasry recalc of cov matrix
         self.K, self.L, self.alpha = None, None, None
 
-    def def_scale(self, p_bounds):
+    def def_scale(self, domain_bounds):
         """!
         @breif Supply scale for each dimension
         """
-        self.p_bounds = p_bounds
-        if p_bounds is not None:
-            assert len(p_bounds) == self.cov_fn.ndim
+        self.domain_bounds = domain_bounds
+        if domain_bounds is not None:
+            assert len(domain_bounds) == self.cov_fn.ndim
 
     def _x_transform(self, x):
-        if self.p_bounds is not None:
-            p_bounds_min = np.asarray(self.p_bounds)[:, 0]
-            p_bounds_max = np.asarray(self.p_bounds)[:, 1]
-            return (x - p_bounds_min) / (p_bounds_max - p_bounds_min)
+        if self.domain_bounds is not None:
+            domain_bounds_min = np.asarray(self.domain_bounds)[:, 0]
+            domain_bounds_max = np.asarray(self.domain_bounds)[:, 1]
+            return (x - domain_bounds_min) / (domain_bounds_max - domain_bounds_min)
         else:
+            if self.verbose: print("WARNING: No bounds specified for GP")
             return x
 
     def x_tr(self, x):
@@ -189,9 +192,10 @@ class gp_regressor(object):
             self.y_shift = 0.0
         self.y_known = y - self.y_shift
         self.y_known_sigma = y_sigma
-        neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, y, p_list)
+        neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list)
         if method == 'direct' or method == 'ncsu':
-            res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds, maxf=kwargs.get('maxf', 100), algmethod=1)
+            res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds,
+                                  maxf=kwargs.get('maxf', 600), algmethod=kwargs.get('algmethod', 1))
         else:
             res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
                                niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
@@ -217,7 +221,7 @@ class gp_regressor(object):
         x_test_tr = self.x_tr(x_test)
         return np.dot(self.cov_fn(self.x_known, x_test_tr).T, self.alpha) + self.y_shift
 
-    def predict_sd(self, x_tests, cov=False, chunk_size=10):
+    def predict_sd(self, x_tests, cov=False, chunk_size=10, **kwargs):
         """
         @brief Obtain standard deviation estimate at x
         @param x_test np_ndarray
@@ -256,13 +260,16 @@ class gp_regressor(object):
         # note: trace is sum of diag
         return -0.5 * np.dot(y.T, alpha) - np.trace(L) - (n / 2.0) * np.log(2 * np.pi)
 
-    def sample_y(self, x_tests, n_draws=1, diag_scale=1e-6, chunk_size=10):
+    def sample_y(self, x_tests, n_draws=1, diag_scale=1e-6, chunk_size=10, rnd_seed=None):
         """
         @brief Draw a single sample from gaussian process regression at locations x_tests
         @param x_tests np_ndarray  locations at which to sample the gaussian process
         """
         assert self.K is not None
         K, L = self.K, self.L
+
+        if rnd_seed:
+            np.random.seed(rnd_seed)
 
         res = []
         for x_test in np.array_split(x_tests, int(np.ceil(len(x_tests) / chunk_size)), axis=0):
@@ -281,11 +288,14 @@ class gp_regressor(object):
         # expected shape: (len(xtest), n_draws)
         return result
 
-    def sample_y_rnd(self, x_tests, n_draws=1, chunk_size=10, **kwargs):
+    def sample_y_rnd(self, x_tests, n_draws=1, chunk_size=10, rnd_seed=None, **kwargs):
         """!
         @brief Generate spatially uncorrelated samples from the gaussian process.
         Significantly faster than sample_y() with a large chunk_size.
         """
+        if rnd_seed:
+            np.random.seed(rnd_seed)
+
         results = []
         for x_test in np.array_split(x_tests, int(np.ceil(len(x_tests) / chunk_size)), axis=0):
             mu = self.predict(x_test)
@@ -337,24 +347,25 @@ if __name__ == "__main__":
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel
     # sin test data
-    Xtrain = np.random.uniform(-4, 4, 5).reshape(-1,1)
+    Xtrain = np.random.uniform(-4, 4, 10).reshape(-1,1)
     ytrain = np.sin(Xtrain) #+ np.random.uniform(-1e-2, 1e-2, Xtrain.size)
 
-    my_gpr = gp_regressor()
-    my_gpr.fit(Xtrain, ytrain, p_bounds=((-4., 4.),))
+    my_gpr = gp_regressor(domain_bounds=((-4., 4.),))
+    # my_gpr = gp_regressor(domain_bounds=True)
+    my_gpr.fit(Xtrain, ytrain)
 
     n = 500
     Xtest = np.linspace(-5, 5, n).reshape(-1,1)
     ytest_mean = my_gpr.predict(Xtest)
 
-    ytest_samples = my_gpr.sample_y_rnd(Xtest, n_draws=200, chunk_size=10)
+    ytest_samples = my_gpr.sample_y(Xtest, n_draws=200, chunk_size=1e10)
 
     ytest_sd = my_gpr.predict_sd(Xtest)
 
     plt.figure()
     plt.plot(Xtest, ytest_mean, label="mean")
     for y_test in ytest_samples.T:
-        plt.plot(Xtest, y_test, lw=0.1, ls='-', c='k', alpha=0.05)
+        plt.plot(Xtest, y_test, lw=0.1, ls='-', c='k', alpha=0.45)
     plt.plot(Xtest, ytest_mean.flatten() + 3.0 * ytest_sd, c='r', label=r"$\pm3\sigma$")
     plt.plot(Xtest, ytest_mean.flatten() - 3.0 * ytest_sd, c='r')
     plt.scatter(Xtrain, ytrain, label="train")
@@ -394,7 +405,7 @@ if __name__ == "__main__":
 
     Xtrain = np.array((X.flatten(), Y.flatten())).T
     ytrain = Z.flatten()
-    my_gpr_nd = gp_regressor(ndim=2, p_bounds=((-4., 4.), (-4., 4.)))
+    my_gpr_nd = gp_regressor(ndim=2, domain_bounds=((-4., 4.), (-4., 4.)))
     my_gpr_nd.fit(Xtrain, ytrain)
 
     n = 100

@@ -5,6 +5,7 @@ import scipy.stats as stats
 from mpi4py import MPI
 try:
     from bipymc.demc import DeMcMpi
+    from bipymc.samplers import DeMc
     from bipymc.dream import DreamMpi
     from bipymc.mc_plot import mc_plot
 except:
@@ -143,7 +144,7 @@ def sample_gauss(mcmc_algo, comm):
     if comm.rank == 0: print("========== SAMPLE GAUSSI ===========")
     theta_0 = np.array([1.0])
     # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*8, mpi_comm=comm)
-    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*8, mpi_comm=comm)
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*20, mpi_comm=comm)
     my_mcmc.run_mcmc(4000)
 
     # view results
@@ -162,10 +163,58 @@ def sample_gauss(mcmc_algo, comm):
     else:
         pass
 
+def sample_bimodal_gauss(mcmc_algo, comm):
+    mu_gold_a, std_dev_gold_a = -8.0, 1.0
+    mu_gold_b, std_dev_gold_b = 10.0, 1.0
+
+    def log_like_fn(theta, data=None):
+        return np.log(
+                (1 / 6.) * stats.norm.pdf(theta[0],
+                               loc=mu_gold_a,
+                               scale=std_dev_gold_a) +
+                (5 / 6.) * stats.norm.pdf(theta[0],
+                               loc=mu_gold_b,
+                               scale=std_dev_gold_b)) \
+                - log_prior(theta)
+
+    def log_prior(theta):
+        if (-100 < theta[0] < 100):
+            return 0
+        else:
+            return -np.inf
+
+    if comm.rank == 0: print("========== SAMPLE BIMODAL GAUSSI ===========")
+    theta_0 = np.array([1.0])
+    n_chains = 12
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*n_chains, inflate=1e2, mpi_comm=comm, burnin_gen=0)
+    my_mcmc.run_mcmc(5000 * n_chains)
+    # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*n_chains, inflate=1e1, mpi_comm=comm, burnin_gen=0)
+
+    #my_mcmc = DeMc(log_like_fn, n_chains=comm.size*n_chains, inflate=1e1, mpi_comm=comm, burnin_gen=0)
+    #my_mcmc.run_mcmc(5000 * n_chains, theta_0)
+
+    # view results
+    theta_est, sig_est, chain = my_mcmc.param_est(n_burn=1000)
+    theta_est_, sig_est_, full_chain = my_mcmc.param_est(n_burn=0)
+
+    if comm.rank == 0:
+        print("Esimated mu: %s" % str(theta_est))
+        print("Estimated sigma: %s " % str(sig_est))
+        print("Acceptance fraction: %f" % my_mcmc.acceptance_fraction)
+        print("Expected Acceptance fraction: %f" % (0.36))
+        sys.stdout.flush()
+        # vis the parameter estimates
+        mc_plot.plot_mcmc_params(chain, ["$\mu_b$"], savefig='gauss_bi_mu_mcmc_ex.png', truths=[(1/6.)*(-8.)+(5/6.)*(10.)])
+        # vis the full chain
+        mc_plot.plot_mcmc_chain(full_chain, ["$\mu_b$"], savefig='gauss_bi_mu_chain_ex.png', truths=[(1/6.)*(-8.)+(5/6.)*(10.)])
+    else:
+        pass
+
 
 if __name__ == "__main__":
     comm = MPI.COMM_WORLD
     print("Hello From Rank: ", comm.rank)
     sys.stdout.flush()
     sample_gauss("DE-MC", comm)
+    sample_bimodal_gauss("DREAM", comm)
     fit_line("DE-MC-MPI", comm)

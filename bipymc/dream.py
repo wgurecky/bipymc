@@ -15,8 +15,9 @@ class DreamMpi(DeMcMpi):
     """
     def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8,
                  mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
+        self.gamma_scale = kwargs.get("gamma_scale", 1.0)
         self.del_pairs = kwargs.get("del_pairs", 3)
-        self.burnin_gen = kwargs.get("burnin_gen", 1000)
+        self.burnin_gen = kwargs.get("burnin_gen", 300)
         self.p_cr_update_gen = kwargs.get("n_cr_gen", 120)
         self.n_cr = kwargs.get("n_cr", 3)
         super(DreamMpi, self).__init__(ln_like_fn, theta_0=theta_0, varepsilon=varepsilon, n_chains=n_chains,
@@ -52,19 +53,19 @@ class DreamMpi(DeMcMpi):
         d_prime = np.count_nonzero(cr_mask)
 
         # DREAM mutation step
-        gamma_base = 2.38 / np.sqrt(2. * self.del_pairs * d_prime)
+        gamma_base = self.gamma_scale * 2.38 / np.sqrt(2. * self.del_pairs * d_prime)
         mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=(2, self.del_pairs))
         mut_a_chain_state_vec = prop_chain_pool[mut_chain_ids[0, :]]
         mut_b_chain_state_vec = prop_chain_pool[mut_chain_ids[1, :]]
 
-        mut_a_chain_state = np.sum(mut_a_chain_state_vec, axis=0)
-        mut_b_chain_state = np.sum(mut_b_chain_state_vec, axis=0)
+        mut_a_chain_state = mut_a_chain_state_vec
+        mut_b_chain_state = mut_b_chain_state_vec
         assert len(mut_a_chain_state) == len(mut_b_chain_state)
-        update_dims = np.zeros(len(mut_a_chain_state))
+        update_dims = np.zeros(len(mut_a_chain_state[0,:]))
         update_dims[cr_mask] = 1.0
 
-        # Every 10th step has chance to take large exploration step
-        if k % 10 == 0:
+        # Every 5th step has chance to take large exploration step
+        if k % 5 == 0:
             gamma = np.random.choice([gamma_base, 1.0], p=[0.20, 0.80])
         else:
             gamma = gamma_base
@@ -72,9 +73,8 @@ class DreamMpi(DeMcMpi):
         # Generate proposal vector
         eps_u = McmcChain.var_box(u_epsilon, self.dim)
         eps_n = McmcChain.var_ball(epsilon ** 2.0, self.dim)
-        prop_vector = (np.ones(self.dim) + eps_u) * gamma * \
-                (mut_a_chain_state - mut_b_chain_state) * update_dims
-        prop_vector += eps_n
+        prop_vector = ((np.ones(self.dim) + eps_u) * gamma * \
+                np.sum(mut_a_chain_state - mut_b_chain_state, axis=0) + eps_n) * update_dims
 
         # update proposal vector only in select dimensions
         prop_vector += current_chain.current_pos

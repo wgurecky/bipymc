@@ -12,12 +12,14 @@
 # AUTHOR: William Gurecky
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
+from __future__ import division
 from mpi4py import MPI
 from itertools import product
 import time
 import sys
 from copy import deepcopy
 import numpy as np
+from scipydirect import minimize as ncsu_direct_min
 from bipymc.gp.gpr import *
 
 
@@ -25,23 +27,30 @@ class bo_optimizer(object):
     """!
     @brief Generates proposal(s)
     """
-    def __init__(self, f, dim, p_bounds, x0=None, y0=None, n_init=2,
+    def __init__(self, f, dim, s_bounds, x0=None, y0=None, n_init=2,
                  fn_args=[], fn_kwargs={}, comm=MPI.COMM_WORLD, **kwargs):
         # minimize or maximize fn flag
-        self.gp_fit_kwargs = kwargs.get("gp_fit_kwargs", {'T': 4.0, 'niter': 30})
+        self.gp_fit_kwargs = kwargs.get("gp_fit_kwargs", {})
         assert isinstance(self.gp_fit_kwargs, dict)
         self.minimize = kwargs.get("min", True)
         self.comm = comm
         # setup obj function and parameter bounds
         self.dim = dim
-        self._p_bounds = None
-        self.param_bounds = p_bounds
+        self.search_bounds = s_bounds
         self.obj_f = lambda x: f(x, *fn_args, **fn_kwargs)
         self._init_gp(x0, y0, dim, n_init, **kwargs)
 
+    @property
+    def x_known(self):
+        return self._x_known
+
+    @x_known.setter
+    def x_known(self, x_known):
+        self._x_known = x_known
+
     def _init_gp(self, x0, y0, dim, n_init, **kwargs):
         # setup gp model
-        self.gp_model = gp_regressor(ndim=dim, p_bounds=self.param_bounds)
+        self.gp_model = gp_regressor(ndim=dim, domain_bounds=self.search_bounds)
         # eval obj fn n_init times to seed the method
         if x0 is not None:
             self.x_known = x0
@@ -50,33 +59,39 @@ class bo_optimizer(object):
             self.x_known, self.y_known = self.sample_uniform(n_init)
         # fit the gp model to initial seed points
         self.y_sigma = kwargs.get("y_sigma", 1e-8)
-        self.gp_model.fit(self.x_known, self.y_known.flatten(), self.y_sigma, **self.gp_fit_kwargs)
+        self.gp_model.fit(self.x_known, self.y_known.flatten(),
+                self.y_sigma, **self.gp_fit_kwargs)
 
     @property
-    def param_bounds(self):
-        return self._p_bounds
+    def search_bounds(self):
+        return self._s_bounds
 
-    @param_bounds.setter
-    def param_bounds(self, p_bounds):
+    @search_bounds.setter
+    def search_bounds(self, s_bounds):
         """!
         @brief set parameter bounds
         Note: upper and lower vals req for each param
         """
-        assert isinstance(p_bounds, (list, tuple))
-        assert len(p_bounds) == self.dim
-        assert isinstance(p_bounds[0], (list, tuple))
-        assert len(p_bounds[0]) == 2
-        self._p_bounds = list(list(p_b) for p_b in p_bounds)
+        assert isinstance(s_bounds, (list, tuple))
+        assert len(s_bounds) == self.dim
+        assert isinstance(s_bounds[0], (list, tuple))
+        assert len(s_bounds[0]) == 2
+        self._s_bounds = list(list(p_b) for p_b in s_bounds)
 
-    def optimize(self, n_iter=10, n_samples=100, max_depth=2, mode='min', diag_scale=1e-6):
+    def optimize(self, n_iter=10, n_samples=100, max_depth=2, mode='min', diag_scale=1e-6,
+                 method='direct', return_y=False):
         for i in range(n_iter):
             self.comm.Barrier()
             # everyone get a proposal sample
             converged, try_count = False, 0
             while not converged:
                 try:
-                    x_proposal, y_proposal = self.sample_thompson( \
-                            max_depth=max_depth, n=n_samples, mode=mode, diag_scale=diag_scale)
+                    if method == 'direct':
+                        x_proposal, y_proposal = self.sample_thompson_direct( \
+                                n=n_samples, mode=mode, diag_scale=diag_scale)
+                    else:
+                        x_proposal, y_proposal = self.sample_thompson( \
+                                max_depth=max_depth, n=n_samples, mode=mode, diag_scale=diag_scale)
                     converged = True
                 except:
                     try_count += 1
@@ -113,12 +128,43 @@ class bo_optimizer(object):
             best_idx = np.argmin(self.y_known)
         else:
             best_idx = np.argmax(self.y_known)
+        if return_y:
+            return self.x_known[best_idx], self.y_known[best_idx]
         return self.x_known[best_idx]
+
+    def sample_thompson_direct(self, n=400, mode='min', diag_scale=1e-6, **kwargs):
+        assert mode in ('min', 'max', 'explore')
+        # define surrogate surface as draw from GP model
+        if mode == 'min':
+            gp_sf = lambda x: self.gp_model.sample_y(np.asarray([x]), n_draws=1,
+                    diag_scale=diag_scale, rnd_seed=self.comm.rank).T[0]
+        elif mode == 'max':
+            gp_sf = lambda x: -1.0 * (kwargs.get('y_shift', 1e8) + \
+                    self.gp_model.sample_y(np.asarray([x]), n_draws=1, \
+                    diag_scale=diag_scale, rnd_seed=self.comm.rank).T[0])
+        else:
+            gp_sf = lambda x: -1.0 * np.var(self.gp_model.sample_y(np.asarray([x]), n_draws=10,
+                    diag_scale=diag_scale, rnd_seed=self.comm.rank).flatten())
+        sb = []
+        for bounds in self.search_bounds:
+            bounds_scale = np.abs(bounds[1] - bounds[0]) * kwargs.get("bounds_jitter", 0.05)
+            shrinkage = np.random.uniform(low=0, high=1.0, size=2) * bounds_scale
+            b_low = bounds[0] + shrinkage[0]
+            b_high = bounds[1] - shrinkage[1]
+            sb.append([b_low, b_high])
+        res = ncsu_direct_min(gp_sf, bounds=sb,
+                              maxf=n, algmethod=kwargs.get('algmethod', 1))
+        best_x = res.x
+        # add jitter to prevent possibility of two samples landing in same loc
+        x_purt = kwargs.get("x_purt", 1e-8)
+        best_x += np.random.uniform(-x_purt, x_purt, 1)
+        best_y = self.obj_f(np.array([best_x]))
+        return best_x, best_y
 
     def sample_uniform(self, n_init=2, random=True):
         sample_grid = []
-        p_bounds = deepcopy(self.param_bounds)
-        for bounds in p_bounds:
+        s_bounds = deepcopy(self.search_bounds)
+        for bounds in s_bounds:
             rand_x = np.random.uniform(bounds[0], bounds[1], n_init)
             sample_grid.append(rand_x)
         x_grid = np.array(sample_grid).T
@@ -128,9 +174,9 @@ class bo_optimizer(object):
     def _chunked_meshgrid(self, *args):
         return product(*args)
 
-    def _gen_sample_grid(self, p_bounds, n):
+    def _gen_sample_grid(self, s_bounds, n):
         sample_grid, grid_div_size = [], []
-        for bounds in p_bounds:
+        for bounds in s_bounds:
             start, end = bounds[0], bounds[1]
             search_grid = np.random.uniform(bounds[0], bounds[1], int(n))
             div_size = np.abs(np.std(search_grid))
@@ -140,9 +186,9 @@ class bo_optimizer(object):
 
     def sample_thompson(self, max_depth=2, n=100, mode='min', diag_scale=1e-6):
         assert mode in ('min', 'max', 'explore')
-        p_bounds = deepcopy(self.param_bounds)
+        s_bounds = deepcopy(self.search_bounds)
         for depth in range(max_depth):
-            sample_grid, grid_div_size = self._gen_sample_grid(p_bounds, n)
+            sample_grid, grid_div_size = self._gen_sample_grid(s_bounds, n)
 
             # chunked mesh grid, generate 100 points at a time
             x_mesh_chunk, n_c = [], int(n ** self.dim)
@@ -151,7 +197,8 @@ class bo_optimizer(object):
                 x_mesh_chunk.append(grid_coord)
                 if (c + 1) % 50 == 0 or c == n_c - 1:
                     tmp_x_chunk = np.array(x_mesh_chunk)
-                    tmp_results_x, tmp_results_y = self._gen_thompson_samples(depth, tmp_x_chunk, p_bounds, n, mode, diag_scale, grid_div_size)
+                    tmp_results_x, tmp_results_y = self._gen_thompson_samples( \
+                            depth, tmp_x_chunk, s_bounds, n, mode, diag_scale, grid_div_size)
                     results_x.append(tmp_results_x)
                     results_y.append(tmp_results_y)
                     x_mesh_chunk = []
@@ -159,12 +206,12 @@ class bo_optimizer(object):
             # get best overall result from all chunks
             idx_best = self._pick_best_idx(chunked_y, mode)
             best_x = chunked_x[idx_best]
-            # collapse p_bounds about best est
-            for j in range(len(p_bounds)):
-                p_bounds[j][0] = np.clip(best_x[j] - 0.4 * grid_div_size[j], \
-                        self.param_bounds[j][0], self.param_bounds[j][1])
-                p_bounds[j][1] = np.clip(best_x[j] + 0.4 * grid_div_size[j], \
-                        self.param_bounds[j][0], self.param_bounds[j][1])
+            # collapse s_bounds about best est
+            for j in range(len(s_bounds)):
+                s_bounds[j][0] = np.clip(best_x[j] - 0.4 * grid_div_size[j], \
+                        self.search_bounds[j][0], self.search_bounds[j][1])
+                s_bounds[j][1] = np.clip(best_x[j] + 0.4 * grid_div_size[j], \
+                        self.search_bounds[j][0], self.search_bounds[j][1])
             # reduce sample size
             print("Depth=%d, sample_size = %d, max grid size=%f" % (depth, n, np.max(grid_div_size)))
             n /= 2
@@ -187,7 +234,7 @@ class bo_optimizer(object):
             idx_best = np.argmax(sample_y)
         return idx_best
 
-    def _gen_thompson_samples(self, depth, x_mesh_flat, p_bounds, n, mode, diag_scale, grid_div_size):
+    def _gen_thompson_samples(self, depth, x_mesh_flat, s_bounds, n, mode, diag_scale, grid_div_size):
             sample_x = x_mesh_flat # np.array(x_mesh_flat).T
             if mode == 'explore':
                 # pick location with most varience in response surface
@@ -218,7 +265,7 @@ def one_dim_ex():
 
     # bounds on params (x, y)
     my_bounds = ((-4, 4),)
-    my_bo = bo_optimizer(obj_fn_sin, dim=1, p_bounds=my_bounds, n_init=2, comm=comm)
+    my_bo = bo_optimizer(obj_fn_sin, dim=1, s_bounds=my_bounds, n_init=2, comm=comm)
 
     # run optimizer
     my_bo.optimize(20)
@@ -266,7 +313,7 @@ def two_dim_ex():
 
     # bounds on params (x, y)
     my_bounds = ((-4, 4), (-4, 4))
-    my_bo = bo_optimizer(obj_fn_2d, dim=2, p_bounds=my_bounds, n_init=1, y_sigma=1e-1, comm=comm)
+    my_bo = bo_optimizer(obj_fn_2d, dim=2, s_bounds=my_bounds, n_init=1, y_sigma=1e-1, comm=comm)
 
     # run optimizer
     my_bo.optimize(20, n_samples=20, max_depth=4)

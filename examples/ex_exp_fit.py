@@ -240,8 +240,9 @@ def gen_initial_guess_bo():
             r.append(model_se(theta, xdata, ydata))
         return np.array(r).flatten()
     my_bounds = ((10, 50), (0.1, 1.0), (-1.0, 1.0), (-1e-3, 0.0))
-    my_bo = bo_optimizer(model_resid, dim=4, p_bounds=my_bounds, n_init=2, y_sigma=1e-2)
-    popt = my_bo.optimize(40, n_samples=20, max_depth=3, diag_scale=1e-4, mode='min')
+    my_bo = bo_optimizer(model_resid, dim=4, s_bounds=my_bounds, n_init=2, y_sigma=1e-6,
+            gp_fit_kwargs={'maxf': 1000})
+    popt = my_bo.optimize(40, n_samples=2000, max_depth=3, diag_scale=1e-6, mode='min')
 
     print("=== Opti values by bayesian opt ===")
     print("[tau, c_inf, c_0, leakage]:")
@@ -259,6 +260,6 @@ def read_data(file_name = 'concentration_data.mat', drop=10, col=3):
     return times, c_t
 
 if __name__ == "__main__":
-    popt = gen_initial_guess()
-    # popt_bo = gen_initial_guess_bo()
-    fit_exp_data(popt, "DE-MC")
+    #popt = gen_initial_guess()
+    popt_bo = gen_initial_guess_bo()
+    fit_exp_data(popt_bo, "DE-MC")
