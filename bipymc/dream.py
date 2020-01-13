@@ -54,9 +54,13 @@ class DreamMpi(DeMcMpi):
 
         # DREAM mutation step
         gamma_base = self.gamma_scale * 2.38 / np.sqrt(2. * self.del_pairs * d_prime)
-        mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=(2, self.del_pairs))
+        mut_chain_ids = np.random.choice(valid_pool_ids, replace=True, size=(2, self.del_pairs))
         mut_a_chain_state_vec = prop_chain_pool[mut_chain_ids[0, :]]
         mut_b_chain_state_vec = prop_chain_pool[mut_chain_ids[1, :]]
+        #for p_id in range(self.del_pairs):
+        #    proposal_pair_ids = np.random.choice(valid_pool_ids, replace=False, size=(2,))
+        #    mut_a_chain_state_vec[p_id, :] = prop_chain_pool[proposal_pair_ids[0], :]
+        #    mut_b_chain_state_vec[p_id, :] = prop_chain_pool[proposal_pair_ids[1], :]
 
         mut_a_chain_state = mut_a_chain_state_vec
         mut_b_chain_state = mut_b_chain_state_vec

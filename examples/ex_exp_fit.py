@@ -135,7 +135,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     # Run MCMC
     #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
     #             varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
-    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*20, mpi_comm=comm,
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*8, mpi_comm=comm,
                  varepsilon=1e-8, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
     my_mcmc.run_mcmc(1000 * 100, suffle=True, flip=0.5)
 
@@ -260,6 +260,6 @@ def read_data(file_name = 'concentration_data.mat', drop=10, col=3):
     return times, c_t
 
 if __name__ == "__main__":
-    #popt = gen_initial_guess()
-    popt_bo = gen_initial_guess_bo()
-    fit_exp_data(popt_bo, "DE-MC")
+    popt = gen_initial_guess()
+    #popt_bo = gen_initial_guess_bo()
+    fit_exp_data(popt, "DE-MC")
