@@ -132,17 +132,13 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     sigma_0 = 1e-4
     theta_0 = np.array(list(theta_0) + [sigma_0])
 
-    # Run MCMC
-    #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
-    #             varepsilon=1e-9, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
-    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*8, mpi_comm=comm,
-                 varepsilon=1e-8, inflate=1e-1, ln_kwargs={'y_data': y_data, 't': t_data})
-    my_mcmc.run_mcmc(1000 * 100, suffle=True, flip=0.5)
+    varepsilon=np.asarray([1e-2, 1e-2, 1e-3, 1e-8, 1e-9]) * 1e-2
 
     # Run MCMC
-    # my_mcmc = DeMc(lnprob, n_chains=comm.size*10, mpi_comm=comm,
-    #             ln_kwargs={'y_data': y_data, 't': t_data})
-    # my_mcmc.run_mcmc(2000 * 100, theta_0, varepsilon=1e-9, inflate=1e-1)
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=6, mpi_comm=comm,
+                 n_cr_gen=100, burnin_gen=1200,
+                 varepsilon=varepsilon, ln_kwargs={'y_data': y_data, 't': t_data})
+    my_mcmc.run_mcmc(1000 * 100, suffle=True, flip=0.5)
 
     # Run Emcee MCMC
     if comm.rank == 0:

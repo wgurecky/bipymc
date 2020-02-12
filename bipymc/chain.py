@@ -18,7 +18,7 @@ class McmcChain(object):
         @param global_id int  chain id
         """
         assert isinstance(global_id, int)
-        assert varepsilon >= 0.0
+        assert np.all(np.asarray(varepsilon) >= 0.0)
         assert global_id >= 0
         self.global_id = global_id
         theta_0_flat = np.asarray(theta_0).flatten()
@@ -33,9 +33,9 @@ class McmcChain(object):
         @brief Draw single sample from tight gaussian ball
         """
         var_epsilon = 0.
-        if varepsilon > 0:
+        if np.all(np.asarray(varepsilon) > 0):
             var_epsilon = np.random.multivariate_normal(np.zeros(dim),
-                                                        np.eye(dim) * varepsilon,
+                                                        np.eye(dim) * np.asarray(varepsilon),
                                                         size=1)[0]
         return var_epsilon
 
@@ -45,9 +45,9 @@ class McmcChain(object):
         @brief Draw single sample from tight uniform box
         """
         var_epsilon = 0.
-        if varepsilon > 0:
-            var_epsilon = np.random.uniform(low=-varepsilon * np.ones(dim),
-                                            high=varepsilon * np.ones(dim))
+        if np.all(np.asarray(varepsilon) > 0):
+            var_epsilon = np.random.uniform(low=-np.asarray(varepsilon) * np.ones(dim),
+                                            high=np.asarray(varepsilon) * np.ones(dim))
         return var_epsilon
 
     def set_t_kernel(self, t_kernel):

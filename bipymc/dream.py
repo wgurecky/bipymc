@@ -17,8 +17,10 @@ class DreamMpi(DeMcMpi):
                  mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
         self.gamma_scale = kwargs.get("gamma_scale", 1.0)
         self.del_pairs = kwargs.get("del_pairs", 3)
+        # Controls when updates to crossover prob and chain culling end.
         self.burnin_gen = kwargs.get("burnin_gen", 300)
-        self.p_cr_update_gen = kwargs.get("n_cr_gen", 120)
+        # Controls when crossover updates and chain culling begin.
+        self.p_cr_update_gen = kwargs.get("n_cr_gen", 50)
         self.n_cr = kwargs.get("n_cr", 3)
         super(DreamMpi, self).__init__(ln_like_fn, theta_0=theta_0, varepsilon=varepsilon, n_chains=n_chains,
                  mpi_comm=mpi_comm, ln_kwargs=ln_kwargs, **kwargs)

@@ -76,7 +76,7 @@ def fit_line(mcmc_algo, comm):
     theta_0 = np.array([4.0, -0.5])
     #my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*10, mpi_comm=comm,
     #                  inflate=1e1, ln_kwargs={'data': y})
-    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*10, mpi_comm=comm,
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*6, mpi_comm=comm,
                       inflate=1e1, ln_kwargs={'data': y})
     my_mcmc.run_mcmc(500 * 100)
 
@@ -105,7 +105,7 @@ def fit_line(mcmc_algo, comm):
     theta_0 = np.array([-0.8, 4.5, 0.2])
     #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
     #                  ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
-    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*6, mpi_comm=comm,
                       ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
     my_mcmc.run_mcmc(500 * 100)
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=10000)
@@ -144,7 +144,7 @@ def sample_gauss(mcmc_algo, comm):
     if comm.rank == 0: print("========== SAMPLE GAUSSI ===========")
     theta_0 = np.array([1.0])
     # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*8, mpi_comm=comm)
-    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*20, mpi_comm=comm)
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*6, mpi_comm=comm)
     my_mcmc.run_mcmc(4000)
 
     # view results
@@ -185,10 +185,10 @@ def sample_bimodal_gauss(mcmc_algo, comm):
 
     if comm.rank == 0: print("========== SAMPLE BIMODAL GAUSSI ===========")
     theta_0 = np.array([1.0])
-    n_chains = 12
-    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*n_chains, inflate=1e2, mpi_comm=comm, burnin_gen=0)
+    n_chains = 6
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*n_chains, varepsilon=1e-7, mpi_comm=comm, burnin_gen=0)
     my_mcmc.run_mcmc(5000 * n_chains)
-    # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*n_chains, inflate=1e1, mpi_comm=comm, burnin_gen=0)
+    # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*n_chains, varepsilon=1e-7, mpi_comm=comm, burnin_gen=0)
 
     #my_mcmc = DeMc(log_like_fn, n_chains=comm.size*n_chains, inflate=1e1, mpi_comm=comm, burnin_gen=0)
     #my_mcmc.run_mcmc(5000 * n_chains, theta_0)

@@ -12,6 +12,8 @@ class DeMcMpi(DeMc):
     """
     def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8,
                  mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
+        varepsilon = np.asarray(varepsilon)
+        assert isinstance(varepsilon, np.ndarray) or isinstance(varepsilon, float)
         self.comm = mpi_comm
         self.local_n_accepted = 0
         self.local_n_rejected = 1
@@ -37,7 +39,7 @@ class DeMcMpi(DeMc):
         self.rank_chain_ids = rank_chain_ids
         self.am_chains = []
         for i, c_id in enumerate(self.rank_chain_ids):
-            self.am_chains.append(McmcChain(theta_0, varepsilon * kwargs.get("inflate", 1e1),
+            self.am_chains.append(McmcChain(theta_0, np.asarray(varepsilon),
                                   global_id=int(c_id), mpi_comm=self.comm, mpi_rank=self.comm.rank))
 
     def init_warmstart_chain(self, h5_file):
