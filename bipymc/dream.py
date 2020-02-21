@@ -17,8 +17,10 @@ class DreamMpi(DeMcMpi):
                  mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
         self.gamma_scale = kwargs.get("gamma_scale", 1.0)
         self.del_pairs = kwargs.get("del_pairs", 3)
+        # Controls when updates to crossover prob and chain culling end.
         self.burnin_gen = kwargs.get("burnin_gen", 300)
-        self.p_cr_update_gen = kwargs.get("n_cr_gen", 120)
+        # Controls when crossover updates and chain culling begin.
+        self.p_cr_update_gen = kwargs.get("n_cr_gen", 50)
         self.n_cr = kwargs.get("n_cr", 3)
         super(DreamMpi, self).__init__(ln_like_fn, theta_0=theta_0, varepsilon=varepsilon, n_chains=n_chains,
                  mpi_comm=mpi_comm, ln_kwargs=ln_kwargs, **kwargs)
@@ -54,9 +56,13 @@ class DreamMpi(DeMcMpi):
 
         # DREAM mutation step
         gamma_base = self.gamma_scale * 2.38 / np.sqrt(2. * self.del_pairs * d_prime)
-        mut_chain_ids = np.random.choice(valid_pool_ids, replace=False, size=(2, self.del_pairs))
+        mut_chain_ids = np.random.choice(valid_pool_ids, replace=True, size=(2, self.del_pairs))
         mut_a_chain_state_vec = prop_chain_pool[mut_chain_ids[0, :]]
         mut_b_chain_state_vec = prop_chain_pool[mut_chain_ids[1, :]]
+        #for p_id in range(self.del_pairs):
+        #    proposal_pair_ids = np.random.choice(valid_pool_ids, replace=False, size=(2,))
+        #    mut_a_chain_state_vec[p_id, :] = prop_chain_pool[proposal_pair_ids[0], :]
+        #    mut_b_chain_state_vec[p_id, :] = prop_chain_pool[proposal_pair_ids[1], :]
 
         mut_a_chain_state = mut_a_chain_state_vec
         mut_b_chain_state = mut_b_chain_state_vec
