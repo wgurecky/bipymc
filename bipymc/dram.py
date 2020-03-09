@@ -1,5 +1,5 @@
-from samplers import *
-from chain import *
+from bipymc.samplers import *
+from bipymc.chain import *
 from copy import deepcopy
 import numpy as np
 

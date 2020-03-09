@@ -4,6 +4,7 @@ import sys
 import scipy.stats as stats
 try:
     from bipymc.samplers import DeMc, AdaptiveMetropolis, Metropolis
+    from bipymc.dram import DrMetropolis, Dram
     from bipymc.mc_plot import mc_plot
 except:
     # add to path
