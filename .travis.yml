@@ -13,6 +13,7 @@ env:
     - MPLBACKEND="agg"
 install:
     - pip uninstall numpy -y
+    - pip install numpy
     - pip install coveralls pytest-cov
     - pip install -r requirements.txt
     - FC=gfortran python setup.py develop
