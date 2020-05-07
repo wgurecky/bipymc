@@ -9,7 +9,7 @@ addons:
             - gcc-4.8
             - build-essential
             - gfortran
-            - mpich
+            - libopenmpi-dev
 env:
     - MPLBACKEND="agg"
 install:
