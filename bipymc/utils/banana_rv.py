@@ -20,7 +20,7 @@ class Banana_2D(object):
         self.b = b
         # define gauss dist
         mean_vec = np.array([self.mu1, self.mu2])
-        cov = np.array([[self.sigma1 ** 2.0, self.rho], [self.rho, self.sigma2 ** 2.0]])
+        cov = np.array([[self.sigma1 ** 2.0, self.rho * (sigma1 * sigma2)], [self.rho * (sigma1 * sigma2), self.sigma2 ** 2.0]])
         self.rv_2d_normal = multivariate_normal(mean_vec, cov)
 
     def pdf(self, y1, y2):
@@ -35,6 +35,19 @@ class Banana_2D(object):
     def ln_like(self, y):
         assert len(y) == 2
         return np.log(self.pdf(y[0], y[1]))
+
+    def check_prob_lvl(self, y1, y2, pdf_lvl):
+        return pdf_lvl < self.pdf(y1, y2)
+
+    def transform(self, x1, x2):
+        y1 = self.a * x1
+        y2 = x2 / self.a + self.b * (x1 ** 2.0 + self.a ** 2.0)
+        return y1, y2
+
+    def inv_transform(self, y1, y2):
+        x1_inv = y1 / self.a
+        x2_inv = (y2 - self.b * (x1_inv ** 2.0 + self.a ** 2.0)) * self.a
+        return x1_inv, x2_inv
 
     def rvs(self, n_samples):
         # sample from gauss
