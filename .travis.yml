@@ -9,6 +9,7 @@ addons:
             - gcc-4.8
             - build-essential
             - gfortran
+            - mpich
 env:
     - MPLBACKEND="agg"
 install:
