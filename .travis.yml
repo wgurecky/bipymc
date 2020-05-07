@@ -1,0 +1,22 @@
+language: python
+python:
+    - "3.6"
+addons:
+    apt:
+        sources:
+            - ubuntu-toolchain-r-test
+        packages:
+            - gcc-4.8
+            - build-essential
+            - gfortran
+            - libopenmpi-dev
+env:
+    - MPLBACKEND="agg"
+install:
+    - pip uninstall numpy -y
+    - pip install numpy
+    - pip install coveralls pytest-cov
+    - pip install -r requirements.txt
+    - FC=gfortran python setup.py develop
+script: pytest --cov=bipymc
+after_success: coveralls
