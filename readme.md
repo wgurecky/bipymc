@@ -5,23 +5,30 @@ About
 
 Bayesian Inference for PYthon using Markov Chain Monte Carlo (BiPyMc).
 
-BiPyMc contains short example implementations of common Markov chain Monte Carlo routines.  This package also contains Bayesian optimization routines for 1) finding optimal parameter values when the objective function is too costly for MCMC to be feasible and 2) generating initial parameter guesses for MCMC if the objective function is inexpensive.
+BiPyMc contains implementations of common Markov chain Monte Carlo routines.
+
+This package also contains Bayesian optimization routines for 1) finding optimal parameter values when the objective function is too costly for MCMC to be feasible and 2) generating initial parameter guesses for MCMC if the objective function is inexpensive.
 
 This package is intended for educational use only.
 
 Try [emcee](https://arxiv.org/abs/1202.3665),
-[pymc3](https://docs.pymc.io/), or Dakota for `real` MCMC applications, however, one can
+[pymc3](https://docs.pymc.io/), or Dakota for mature MCMC implementations; however, one can
 use BiPyMc as a starting point for implementing their own fancy MCMC samplers.
 
-Implemented Example MCMC Methods
+Implemented MCMC Methods
 ---------------------------------
 
 - Metropolis-Hastings
 - Adaptive Metropolis (AM)
-- Differential Evolution Metropolis (DE-MC)
+- Differential Evolution Metropolis (DE-MC)  (Parallel implementation)
+- Differential Evolution Adaptive Metropolis (DREAM)  (Parallel implementation)
 - Delayed Rejection Metropolis
 - Delayed Rejection Adaptive Metropolis (DRAM)
 
+Implemented Bayesian Optimization Methods
+---------------------------------
+
+- Gaussian Process with Thompson sampling  (Parallel implementation)
 
 References
 -----------
