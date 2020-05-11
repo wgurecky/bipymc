@@ -49,14 +49,18 @@ def mean_line(ax, x, **kwargs):
                 xy=(0.25, 1.02), xycoords=ax.transAxes)
 
 
-def plot_mcmc_indep_chains(samples, n_chains, labels, savefig, truths=None, nburn=None):
+def plot_mcmc_indep_chains(samples, n_chains, labels, savefig, truths=None, nburn=None, scatter=False):
     pl.clf()
     n_params = samples.shape[1]
     fig, axes = pl.subplots(n_params, 1, sharex=True, figsize=(8, 9), squeeze=False)
     for c in range(n_chains):
         chain_samples = samples[c::n_chains]
         for i in range(n_params):
-            axes[i, 0].plot(chain_samples[:, i].T, color="k", alpha=0.2, lw=1)
+            if scatter:
+                axes[i, 0].scatter(range(0, chain_samples[:, i].size),
+                        chain_samples[:, i].T, color="k", alpha=0.25, s=2)
+            else:
+                axes[i, 0].plot(chain_samples[:, i].T, color="k", alpha=0.2, lw=1)
 
     for i in range(n_params):
         mean = np.mean(samples[:, i][nburn:].T)
