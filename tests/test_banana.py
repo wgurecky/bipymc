@@ -14,6 +14,7 @@ from bipymc.utils import banana_rv
 from bipymc.demc import DeMcMpi
 from bipymc.dream import DreamMpi
 from bipymc.dram import DrMetropolis, Dram
+np.random.seed(42)
 
 
 class TestMcmcBanana(unittest.TestCase):
