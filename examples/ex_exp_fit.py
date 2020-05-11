@@ -135,8 +135,9 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
     varepsilon=np.asarray([1e-2, 1e-2, 1e-3, 1e-8, 1e-9]) * 1e-2
 
     # Run MCMC
-    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=6, mpi_comm=comm,
-                 n_cr_gen=100, burnin_gen=1200,
+    n_chains = 6
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=n_chains, mpi_comm=comm,
+                 n_cr_gen=200, burnin_gen=4000,
                  varepsilon=varepsilon, ln_kwargs={'y_data': y_data, 't': t_data})
     my_mcmc.run_mcmc(1000 * 100, suffle=True, flip=0.5)
 
@@ -168,7 +169,7 @@ def fit_exp_data(theta_0, mcmc_algo="DE-MC"):
                 labels=[r"$\tau$", "$c_\infty$", "$c_0$", "leak", r"$\sigma$"],
                 savefig='exp_mcmc_out.png',)
         # vis the full chain
-        mc_plot.plot_mcmc_chain(full_chain,
+        mc_plot.plot_mcmc_indep_chains(full_chain, n_chains,
                 labels=[r"$\tau$", "$c_\infty$", "$c_0$", "leak", r"$\sigma$"],
                 savefig='exp_chain_out.png',)
 

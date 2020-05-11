@@ -74,9 +74,8 @@ def fit_line(mcmc_algo, comm):
     # === EXAMPLE 1 ===
     if comm.rank == 0: print("========== FIT LIN MODEL 1 ===========")
     theta_0 = np.array([4.0, -0.5])
-    #my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*10, mpi_comm=comm,
-    #                  inflate=1e1, ln_kwargs={'data': y})
-    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*6, mpi_comm=comm,
+    n_chains = comm.size*6
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=n_chains, mpi_comm=comm,
                       inflate=1e1, ln_kwargs={'data': y})
     my_mcmc.run_mcmc(500 * 100)
 
@@ -93,19 +92,18 @@ def fit_line(mcmc_algo, comm):
                 savefig='line_mcmc_ex.png',
                 truths=[4.294, -0.9594])
         # vis the full chain
-        mc_plot.plot_mcmc_chain(full_chain,
+        mc_plot.plot_mcmc_indep_chains(full_chain, n_chains,
                 labels=["$y_0$", "m"],
                 savefig='lin_chain_ex.png',
-                truths=[4.294, -0.9594])
+                truths=[4.294, -0.9594], scatter=True)
 
 
     # === EXAMPLE 2 ===
     comm.Barrier()
     if comm.rank == 0: print("========== FIT LIN MODEL 2 ===========")
     theta_0 = np.array([-0.8, 4.5, 0.2])
-    #my_mcmc = DeMcMpi(lnprob, theta_0, n_chains=comm.size*10, mpi_comm=comm,
-    #                  ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
-    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=comm.size*6, mpi_comm=comm,
+    n_chains = comm.size*6
+    my_mcmc = DreamMpi(lnprob, theta_0, n_chains=n_chains, mpi_comm=comm,
                       ln_kwargs={'x': x, 'y': y, 'yerr': yerr}, inflate=1e1)
     my_mcmc.run_mcmc(500 * 100)
     theta_est, sig_est, chain = my_mcmc.param_est(n_burn=10000)
@@ -120,10 +118,11 @@ def fit_line(mcmc_algo, comm):
                 savefig='line_mcmc_ex_2.png',
                 truths=[-0.9594, 4.294, np.log(f_true)])
         # vis the full chain
-        mc_plot.plot_mcmc_chain(full_chain,
+        mc_plot.plot_mcmc_indep_chains(full_chain, n_chains,
                 labels=["m", "$y_0$", "$\mathrm{ln}(f)$"],
                 savefig='lin_chain_ex_2.png',
-                truths=[-0.9594, 4.294, np.log(f_true)])
+                truths=[-0.9594, 4.294, np.log(f_true)],
+                scatter=True)
 
 
 def sample_gauss(mcmc_algo, comm):
@@ -143,8 +142,8 @@ def sample_gauss(mcmc_algo, comm):
 
     if comm.rank == 0: print("========== SAMPLE GAUSSI ===========")
     theta_0 = np.array([1.0])
-    # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*8, mpi_comm=comm)
-    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*6, mpi_comm=comm)
+    n_chains = comm.size*6
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=n_chains, mpi_comm=comm)
     my_mcmc.run_mcmc(4000)
 
     # view results
@@ -159,7 +158,8 @@ def sample_gauss(mcmc_algo, comm):
         # vis the parameter estimates
         mc_plot.plot_mcmc_params(chain, ["$\mu$"], savefig='gauss_mu_mcmc_ex.png', truths=[5.0])
         # vis the full chain
-        mc_plot.plot_mcmc_chain(full_chain, ["$\mu$"], savefig='gauss_mu_chain_ex.png', truths=[5.0])
+        mc_plot.plot_mcmc_indep_chains(full_chain, n_chains, ["$\mu$"], savefig='gauss_mu_chain_ex.png',
+                truths=[5.0], scatter=True)
     else:
         pass
 
@@ -185,9 +185,9 @@ def sample_bimodal_gauss(mcmc_algo, comm):
 
     if comm.rank == 0: print("========== SAMPLE BIMODAL GAUSSI ===========")
     theta_0 = np.array([1.0])
-    n_chains = 6
-    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=comm.size*n_chains, varepsilon=1e-7, mpi_comm=comm, burnin_gen=0)
-    my_mcmc.run_mcmc(5000 * n_chains)
+    n_chains = comm.size*6
+    my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=n_chains, varepsilon=1e-7, mpi_comm=comm, burnin_gen=0)
+    my_mcmc.run_mcmc(1000 * n_chains)
     # my_mcmc = DeMcMpi(log_like_fn, theta_0, n_chains=comm.size*n_chains, varepsilon=1e-7, mpi_comm=comm, burnin_gen=0)
 
     #my_mcmc = DeMc(log_like_fn, n_chains=comm.size*n_chains, inflate=1e1, mpi_comm=comm, burnin_gen=0)
@@ -206,7 +206,9 @@ def sample_bimodal_gauss(mcmc_algo, comm):
         # vis the parameter estimates
         mc_plot.plot_mcmc_params(chain, ["$\mu_b$"], savefig='gauss_bi_mu_mcmc_ex.png', truths=[(1/6.)*(-8.)+(5/6.)*(10.)])
         # vis the full chain
-        mc_plot.plot_mcmc_chain(full_chain, ["$\mu_b$"], savefig='gauss_bi_mu_chain_ex.png', truths=[(1/6.)*(-8.)+(5/6.)*(10.)])
+        mc_plot.plot_mcmc_indep_chains(full_chain, n_chains, ["$\mu_b$"],
+                savefig='gauss_bi_mu_chain_ex.png',
+                truths=[(1/6.)*(-8.)+(5/6.)*(10.)], scatter=True)
     else:
         pass
 

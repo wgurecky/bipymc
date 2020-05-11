@@ -15,7 +15,9 @@ class DreamMpi(DeMcMpi):
     """
     def __init__(self, ln_like_fn, theta_0=None, varepsilon=1e-6, n_chains=8,
                  mpi_comm=MPI.COMM_WORLD, ln_kwargs={}, **kwargs):
+        # controls nominal scale of proposal jump distance
         self.gamma_scale = kwargs.get("gamma_scale", 1.0)
+        # controls number of points to use in proposal generation
         self.del_pairs = kwargs.get("del_pairs", 3)
         # Controls when updates to crossover prob and chain culling end.
         self.burnin_gen = kwargs.get("burnin_gen", 300)
@@ -59,10 +61,10 @@ class DreamMpi(DeMcMpi):
         mut_chain_ids = np.random.choice(valid_pool_ids, replace=True, size=(2, self.del_pairs))
         mut_a_chain_state_vec = prop_chain_pool[mut_chain_ids[0, :]]
         mut_b_chain_state_vec = prop_chain_pool[mut_chain_ids[1, :]]
-        #for p_id in range(self.del_pairs):
-        #    proposal_pair_ids = np.random.choice(valid_pool_ids, replace=False, size=(2,))
-        #    mut_a_chain_state_vec[p_id, :] = prop_chain_pool[proposal_pair_ids[0], :]
-        #    mut_b_chain_state_vec[p_id, :] = prop_chain_pool[proposal_pair_ids[1], :]
+        for p_id in range(self.del_pairs):
+            proposal_pair_ids = np.random.choice(valid_pool_ids, replace=False, size=(2,))
+            mut_a_chain_state_vec[p_id, :] = prop_chain_pool[proposal_pair_ids[0], :]
+            mut_b_chain_state_vec[p_id, :] = prop_chain_pool[proposal_pair_ids[1], :]
 
         mut_a_chain_state = mut_a_chain_state_vec
         mut_b_chain_state = mut_b_chain_state_vec
