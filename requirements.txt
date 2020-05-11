@@ -2,6 +2,7 @@ numpy
 scipy
 h5py
 matplotlib
+corner
 mpi4py
 scipydirect
 numba
