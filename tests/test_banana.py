@@ -93,7 +93,6 @@ class TestMcmcBanana(unittest.TestCase):
         n_samples = 10000
         y1, y2 = self.banana.rvs(n_samples)
         plt.figure()
-        y1
         plt.scatter(y1, y2, s=2, alpha=0.3)
         plt.xlim(-4, 4)
         plt.ylim(-2, 10)
