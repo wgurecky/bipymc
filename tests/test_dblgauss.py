@@ -118,6 +118,7 @@ class TestMcmcDblGauss(unittest.TestCase):
         plt.grid(ls='--', alpha=0.5)
         plt.xlabel("x1")
         plt.ylabel("x2")
+        plt.title("True  PDF")
         plt.colorbar(label='probability density')
         plt.savefig("true_bimodal_gauss_pdf.png")
         plt.close()
