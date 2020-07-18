@@ -9,6 +9,7 @@ from six import iteritems
 from mpi4py import MPI
 import matplotlib.pyplot as plt
 import time
+import pytest
 #
 from bipymc.utils import banana_rv, dblgauss_rv, d100_gauss
 from bipymc.mc_plot import mc_plot
@@ -20,6 +21,7 @@ n_samples = 500000
 n_burn = 200000
 
 
+@pytest.mark.heavy
 class TestMcmc100DGauss(unittest.TestCase):
     def setUp(self):
         """
