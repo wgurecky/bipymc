@@ -25,34 +25,15 @@ Implemented MCMC Methods
 - Delayed Rejection Metropolis
 - Delayed Rejection Adaptive Metropolis (DRAM)
 
-## Example: Sample Bimodal Gaussian Distribution with DREAM
-
-![image](https://github.com/wgurecky/bipymc/blob/master/doc/images/bimodal_mont.png)
-
-
-## Basic Use Example:
-
-        from mpi4py import MPI
-        from bipymc.dream import DreamMpi
-    
-        # Define log_like_fn
-        # Has signature ln_p <- log_like_fn(theta, **kwargs)
-        # where theta is a 1d array
-        # and returns a float, ln_p.
-        def log_like_fn(theta, **kwargs):
-            # ... compute ln_p
-            return ln_p
-        
-        n_chain, n_burn, n_samples = 10, 20000, 100000
-        theta_0 = #... initial parameter guess
-        my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=n_chains, mpi_comm=MPI.COMM_WORLD,
-                           n_cr_gen=50, burnin_gen=int(n_burn / n_chain))
-        my_mcmc.run_mcmc(n_samples)
 
 ### Included Tests:
 - `tests/test_100dgauss.py`: 100 Dimensional normal distribution test.  Shows improved performance of DREAM in high dimensions.
-- `tests/test_dblgauss.py`: Ensures DREAM and DE-MC samplers handle multi-modal distributions.  Demonstrates DRAM and AM limitations.
 - `tests/test_banana.py`: Ensures all MCMC methods obtain correct samples from non-linear, distorted-gaussian distribution.
+- `tests/test_dblgauss.py`: Ensures DREAM and DE-MC samplers handle multi-modal distributions.  Demonstrates DRAM and AM limitations.
+
+#### Sample Bimodal Gaussian Distribution with DREAM
+
+![image](https://github.com/wgurecky/bipymc/blob/master/doc/images/bimodal_mont.png)
 
 
 Implemented Bayesian Optimization Methods
@@ -93,6 +74,25 @@ Install and run examples:
 Optional parallel example:
 
     mpirun -np 4 python examples/ex_para_fit.py
+    
+Basic Use Example:
+
+        from mpi4py import MPI
+        from bipymc.dream import DreamMpi
+    
+        # Define log_like_fn
+        # Has signature ln_p <- log_like_fn(theta, **kwargs)
+        # where theta is a 1d array
+        # and returns a float, ln_p.
+        def log_like_fn(theta, **kwargs):
+            # ... compute ln_p
+            return ln_p
+        
+        n_chain, n_burn, n_samples = 10, 20000, 100000
+        theta_0 = #... initial parameter guess
+        my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=n_chains, mpi_comm=MPI.COMM_WORLD,
+                           n_cr_gen=50, burnin_gen=int(n_burn / n_chain))
+        my_mcmc.run_mcmc(n_samples)
 
 
 Depends
