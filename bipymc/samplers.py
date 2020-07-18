@@ -4,6 +4,7 @@ import numpy as np
 import scipy.stats as stats
 from bipymc.proposals import *
 from bipymc.chain import *
+from bipymc.util import var_ball, var_box
 
 
 class McmcSampler(object):
@@ -282,7 +283,7 @@ class DeMc(McmcSampler):
                 # generate proposal vector
                 prop_vector = gamma * (mut_a_chain.current_pos - mut_b_chain.current_pos)
                 prop_vector += current_chain.current_pos
-                prop_vector += McmcChain.var_ball(varepsilon * 1e-3, dim)
+                prop_vector += var_ball(varepsilon * 1e-3, dim)
 
                 # note the probability ratio can be computed in parallel
                 # accept or reject mutated chain loc

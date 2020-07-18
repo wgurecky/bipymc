@@ -75,10 +75,15 @@ class TestMcmcDblGauss(unittest.TestCase):
 
                 # plot mcmc samples
                 plt.figure()
-                plt.scatter(y1, y2, s=2, alpha=0.15)
+                plt.scatter(y1, y2, s=2, alpha=0.10)
                 plt.grid(ls='--', alpha=0.5)
                 plt.xlim(-2, 4)
                 plt.ylim(-2, 4)
+                plt.axvline(theta_est[0], -10, 10, c='r')
+                plt.axhline(theta_est[1], -10, 10, c='r')
+                plt.xlabel("x1")
+                plt.ylabel("x2")
+                plt.title(sampler_name + "  " + r"$ \mu=(%0.2f,%0.2f)$" % (theta_est[0], theta_est[1]))
                 plt.savefig(str(sampler_name) + "_bimodal_gauss_sample.png")
                 plt.close()
 
@@ -86,7 +91,7 @@ class TestMcmcDblGauss(unittest.TestCase):
                 mc_plot.plot_mcmc_indep_chains(full_chain, n_chains,
                         labels=["x1", "x2"],
                         savefig=str(sampler_name) + "_chains.png",
-                        scatter=True)
+                        scatter=True, nburn=int(n_burn))
 
     def _plot_bimodal_gauss(self):
         n_samples = 10000
@@ -96,6 +101,11 @@ class TestMcmcDblGauss(unittest.TestCase):
         plt.xlim(-2, 4)
         plt.ylim(-2, 4)
         plt.grid(ls='--', alpha=0.5)
+        plt.axvline(1.5, -10, 10, c='r')
+        plt.axhline(1.5, -10, 10, c='r')
+        plt.xlabel("x1")
+        plt.ylabel("x2")
+        plt.title("True  " + r"$ \mu=(%0.2f,%0.2f)$" % (1.5, 1.5))
         plt.savefig("true_bimodal_gauss_asamples.png")
         plt.close()
 
@@ -106,6 +116,9 @@ class TestMcmcDblGauss(unittest.TestCase):
         p = self.bimodal_gauss.pdf(y1, y2)
         plt.contourf(y1, y2, p)
         plt.grid(ls='--', alpha=0.5)
+        plt.xlabel("x1")
+        plt.ylabel("x2")
+        plt.title("True  PDF")
         plt.colorbar(label='probability density')
         plt.savefig("true_bimodal_gauss_pdf.png")
         plt.close()

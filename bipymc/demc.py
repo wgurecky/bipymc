@@ -4,6 +4,7 @@ import numpy as np
 from bipymc.samplers import *
 from mpi4py import MPI
 import sys
+from bipymc.util import var_box, var_ball
 
 
 class DeMcMpi(DeMc):
@@ -178,7 +179,7 @@ class DeMcMpi(DeMc):
         # Generate proposal vector
         prop_vector = gamma * (mut_a_chain_state - mut_b_chain_state)
         prop_vector += current_chain.current_pos
-        prop_vector += McmcChain.var_ball(epsilon ** 2.0, self.dim)
+        prop_vector += var_ball(epsilon ** 2.0, self.dim)
 
         # Metropolis ratio
         alpha = self._mut_prop_ratio(self._frozen_ln_like_fn,

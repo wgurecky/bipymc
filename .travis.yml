@@ -18,5 +18,5 @@ install:
     - pip install coveralls pytest-cov
     - pip install -r requirements.txt
     - FC=gfortran python setup.py develop
-script: pytest --cov=bipymc
+script: travis_wait 20 pytest --cov=bipymc -m "not heavy"
 after_success: coveralls
