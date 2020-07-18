@@ -3,6 +3,7 @@ from six import iteritems
 import h5py
 import numpy as np
 import scipy.stats as stats
+from bipymc.util import var_ball
 
 
 class McmcChain(object):
@@ -23,32 +24,9 @@ class McmcChain(object):
         self.global_id = global_id
         theta_0_flat = np.asarray(theta_0).flatten()
         self._dim = len(theta_0_flat)
-        theta_0_flat = np.asarray(theta_0_flat) + self.var_ball(varepsilon, self._dim)
+        theta_0_flat = np.asarray(theta_0_flat) + var_ball(varepsilon, self._dim)
         # init the 2d array of shape (iteration, <theta_vec>)
         self._chain = np.array([theta_0_flat])
-
-    @staticmethod
-    def var_ball(varepsilon, dim):
-        """!
-        @brief Draw single sample from tight gaussian ball
-        """
-        var_epsilon = 0.
-        if np.all(np.asarray(varepsilon) > 0):
-            var_epsilon = np.random.multivariate_normal(np.zeros(dim),
-                                                        np.eye(dim) * np.asarray(varepsilon),
-                                                        size=1)[0]
-        return var_epsilon
-
-    @staticmethod
-    def var_box(varepsilon, dim):
-        """!
-        @brief Draw single sample from tight uniform box
-        """
-        var_epsilon = 0.
-        if np.all(np.asarray(varepsilon) > 0):
-            var_epsilon = np.random.uniform(low=-np.asarray(varepsilon) * np.ones(dim),
-                                            high=np.asarray(varepsilon) * np.ones(dim))
-        return var_epsilon
 
     def set_t_kernel(self, t_kernel):
         """!

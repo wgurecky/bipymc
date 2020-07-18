@@ -4,6 +4,7 @@ from copy import deepcopy
 import numpy as np
 from bipymc.demc import DeMcMpi
 from bipymc.chain import McmcChain
+from bipymc.util import var_ball, var_box
 from mpi4py import MPI
 import sys
 
@@ -79,8 +80,8 @@ class DreamMpi(DeMcMpi):
             gamma = gamma_base
 
         # Generate proposal vector
-        eps_u = McmcChain.var_box(u_epsilon, self.dim)
-        eps_n = McmcChain.var_ball(epsilon ** 2.0, self.dim)
+        eps_u = var_box(u_epsilon, self.dim)
+        eps_n = var_ball(epsilon ** 2.0, self.dim)
         prop_vector = ((np.ones(self.dim) + eps_u) * gamma * \
                 np.sum(mut_a_chain_state - mut_b_chain_state, axis=0) + eps_n) * update_dims
 
