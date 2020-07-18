@@ -12,7 +12,7 @@ This package also contains Bayesian optimization routines for 1) finding optimal
 This package is intended for educational use only.
 
 Try [emcee](https://arxiv.org/abs/1202.3665),
-[pymc3](https://docs.pymc.io/), or Dakota for mature MCMC implementations; however, one can
+[pymc3](https://docs.pymc.io/), or Dakota for alternative MCMC implementations; however, one can
 use BiPyMc as a starting point for implementing their own fancy MCMC samplers.
 
 Implemented MCMC Methods
@@ -24,6 +24,16 @@ Implemented MCMC Methods
 - Differential Evolution Adaptive Metropolis (DREAM)  (Parallel implementation)
 - Delayed Rejection Metropolis
 - Delayed Rejection Adaptive Metropolis (DRAM)
+
+## Example: Sample Bimodal Gaussian Distribution with DREAM
+
+![image](https://github.com/wgurecky/bipymc/blob/master/doc/images/bimodal_mont.png)
+
+### Included Tests:
+- `tests/test_100dgauss.py`: 100 Dimensional normal distribution test.  Shows improved performance of DREAM in high dimensions.
+- `tests/test_dblgauss.py`: Ensures DREAM and DE-MC samplers handle multi-modal distributions.  Demonstrates DRAM and AM limitations.
+- `tests/test_banana.py`: Ensures all MCMC methods obtain correct samples from non-linear, distorted-gaussian distribution.
+
 
 Implemented Bayesian Optimization Methods
 ---------------------------------
@@ -46,12 +56,12 @@ Quickstart
 
 Install depends:
 
-    pip install corner mpi4py numpy scipy matplotlib
+    pip install corner mpi4py numpy scipy matplotlib pytest
 
 Or if using conda:
 
     conda install -c astropy corner
-    conda install mpi4py numpy scipy matplotlib
+    conda install mpi4py numpy scipy matplotlib pytest
 
 Install and run examples:
 
@@ -71,6 +81,7 @@ Depends
 - python3.2+
 - numpy
 - scipy
+- pytest (optional for tests)
 - mpi4py (optional for parallel DE-MC)
 - matplotlib (optional for plotting)
 - [corner](https://corner.readthedocs.io/en/latest/)  (optional for plotting)
