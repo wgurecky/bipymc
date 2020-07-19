@@ -80,7 +80,7 @@ Basic Use Example:
         # where theta is a 1d array
         # and returns a float, ln_p.
         def ln_like_fn(theta, **kwargs):
-            # extract passed in const params
+            # extract optional keyword arguments
             opt_model_param1 = kwargs.get('param1', 42)
             # ... compute ln_p
             return ln_p
