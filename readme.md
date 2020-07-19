@@ -9,11 +9,6 @@ BiPyMc contains implementations of common Markov chain Monte Carlo routines.
 
 This package also contains Bayesian optimization routines for 1) finding optimal parameter values when the objective function is too costly for MCMC to be feasible and 2) generating initial parameter guesses for MCMC if the objective function is inexpensive.
 
-This package is intended for educational use only.
-
-Try [emcee](https://arxiv.org/abs/1202.3665),
-[pymc3](https://docs.pymc.io/), or Dakota for alternative MCMC implementations; however, one can
-use BiPyMc as a starting point for implementing their own fancy MCMC samplers.
 
 Implemented MCMC Methods
 ---------------------------------
@@ -80,18 +75,20 @@ Basic Use Example:
         from mpi4py import MPI
         from bipymc.dream import DreamMpi
     
-        # Define log_like_fn
-        # Has signature ln_p <- log_like_fn(theta, **kwargs)
+        # Define the log liklihood function
+        # Has signature ln_p <- ln_like_fn(theta, **kwargs)
         # where theta is a 1d array
         # and returns a float, ln_p.
-        def log_like_fn(theta, **kwargs):
+        def ln_like_fn(theta, **kwargs):
+            # extract passed in const params
+            opt_model_param1 = kwargs.get('param1', 42)
             # ... compute ln_p
             return ln_p
         
         n_chain, n_burn, n_samples = 10, 20000, 100000
         theta_0 = #... initial parameter guess
-        my_mcmc = DreamMpi(log_like_fn, theta_0, n_chains=n_chains, mpi_comm=MPI.COMM_WORLD,
-                           n_cr_gen=50, burnin_gen=int(n_burn / n_chain))
+        my_mcmc = DreamMpi(ln_like_fn, theta_0, n_chains=n_chains, mpi_comm=MPI.COMM_WORLD,
+                           n_cr_gen=50, burnin_gen=int(n_burn / n_chain), ln_kwargs={'param1': 42})
         my_mcmc.run_mcmc(n_samples)
 
 
