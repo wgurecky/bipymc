@@ -46,18 +46,19 @@ Braak, C.J.F.T. Statistics and Computing (2006) 16: 239. [https://doi.org/10.100
 
 rXiv:1710.09486  [https://arxiv.org/pdf/1710.09486.pdf](https://arxiv.org/pdf/1710.09486.pdf)
 
+M. Trias, A. Vecchio, J. Veitch. Delayed rejection schemes for efficient Markov-Chain Monte-Carlo sampling of multimodal distributions. [https://arxiv.org/abs/0904.2207](https://arxiv.org/abs/0904.2207)
 
 Quickstart
 ----------
 
 Install depends:
 
-    pip install corner mpi4py numpy scipy matplotlib pytest
+    pip install corner mpi4py numpy scipy h5py matplotlib pytest
 
 Or if using conda:
 
     conda install -c astropy corner
-    conda install mpi4py numpy scipy matplotlib pytest
+    conda install mpi4py numpy scipy h5py matplotlib pytest
 
 Install and run examples:
 
@@ -98,6 +99,7 @@ Depends
 - python3.2+
 - numpy
 - scipy
+- h5py
 - pytest (optional for tests)
 - mpi4py (optional for parallel DE-MC)
 - matplotlib (optional for plotting)
