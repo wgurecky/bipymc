@@ -143,6 +143,13 @@ class gp_regressor(object):
         # cov matrix storage to prevent unnecisasry recalc of cov matrix
         self.K, self.L, self.alpha = None, None, None
 
+    def __call__(self, x_test):
+        """
+        @brief Obtain mean estimate at points in x
+        @param x_test np_ndarray
+        """
+        return self.predict(x_test)
+
     def def_scale(self, domain_bounds):
         """!
         @breif Supply scale for each dimension
@@ -304,6 +311,13 @@ class gp_regressor(object):
             results.append(res)
         # expected shape: (len(xtest), n_draws)
         return np.array(results).reshape(-1, n_draws)
+
+    @property
+    def is_fit(self):
+        """
+        @brief Check if model has been fit
+        """
+        return self.K is not None
 
 
 def nearestPD(A):

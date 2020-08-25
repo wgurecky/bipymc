@@ -28,7 +28,7 @@ class bo_optimizer(object):
     @brief Generates proposal(s)
     """
     def __init__(self, f, dim, s_bounds, x0=None, y0=None, n_init=2,
-                 fn_args=[], fn_kwargs={}, comm=MPI.COMM_WORLD, **kwargs):
+                 fn_args=[], prior=None, fn_kwargs={}, comm=MPI.COMM_WORLD, **kwargs):
         # minimize or maximize fn flag
         self.gp_fit_kwargs = kwargs.get("gp_fit_kwargs", {})
         assert isinstance(self.gp_fit_kwargs, dict)
@@ -38,7 +38,12 @@ class bo_optimizer(object):
         self.dim = dim
         self.search_bounds = s_bounds
         self.obj_f = lambda x: f(x, *fn_args, **fn_kwargs)
-        self._init_gp(x0, y0, dim, n_init, **kwargs)
+        if isinstance(prior, gp_regressor):
+            assert prior.is_fit
+            self.y_sigma = kwargs.get("y_sigma", 1e-8)
+            self.gp_model = prior
+        else:
+            self._init_gp(x0, y0, dim, n_init, **kwargs)
 
     @property
     def x_known(self):
