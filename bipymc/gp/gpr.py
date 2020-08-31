@@ -249,7 +249,8 @@ class gp_regressor(object):
             neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list)
         if method == 'direct' or method == 'ncsu':
             res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds,
-                                  maxf=kwargs.get('maxf', 700), algmethod=kwargs.get('algmethod', 0), eps=1e-5)
+                                  maxf=kwargs.get('maxf', 700), algmethod=kwargs.get('algmethod', 1),
+                                  eps=kwargs.get("eps", 1e-4))
         else:
             _neg_log_like_fn = lambda p_list: neg_log_like_fn(p_list)[0]
             res = basinhopping(_neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
