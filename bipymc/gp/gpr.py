@@ -60,8 +60,8 @@ class gp_kernel():
         # default param bounds
         p_bounds = []
         for param in self.params:
-            p_bounds.append((0.005, 5.0))
-        p_bounds[-1] = (0.001, 5e2)
+            p_bounds.append((0.005, 10.0))
+        p_bounds[-1] = (0.001, 5e3)
         return p_bounds
 
     @param_bounds.setter
@@ -204,7 +204,8 @@ class gp_regressor(object):
         if self.domain_bounds is not None:
             domain_bounds_min = np.asarray(self.domain_bounds)[:, 0]
             domain_bounds_max = np.asarray(self.domain_bounds)[:, 1]
-            return (x - domain_bounds_min) / (domain_bounds_max - domain_bounds_min)
+            x_trans = (x - domain_bounds_min) / (domain_bounds_max - domain_bounds_min)
+            return x_trans
         else:
             if self.verbose: print("WARNING: No bounds specified for GP")
             return x
@@ -223,7 +224,7 @@ class gp_regressor(object):
     def x_known(self, x_known):
         self._x_known = x_known
 
-    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="direct", **kwargs):
+    def fit(self, x, y, y_sigma=1e-10, params_0=None, ln_params=True, method="direct", **kwargs):
         """
         @brief Fit the kernel's shape params to the known data
         @param x np_ndarray
@@ -248,10 +249,11 @@ class gp_regressor(object):
             neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list)
         if method == 'direct' or method == 'ncsu':
             res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds,
-                                  maxf=kwargs.get('maxf', 600), algmethod=kwargs.get('algmethod', 1))
+                                  maxf=kwargs.get('maxf', 700), algmethod=kwargs.get('algmethod', 0), eps=1e-5)
         else:
-            res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
-                               niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
+            _neg_log_like_fn = lambda p_list: neg_log_like_fn(p_list)[0]
+            res = basinhopping(_neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
+                               niter=kwargs.get("niter", 90), interval=10, stepsize=0.1,
                                minimizer_kwargs={'bounds': self.cov_fn.param_bounds, 'method': method})
         cov_params = res.x
         print("Fitted Cov Fn Params:", cov_params)
@@ -264,7 +266,7 @@ class gp_regressor(object):
         self.prior = prior
 
     def _update_cholesky_k(self):
-        self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
+        self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma*np.eye(len(self.x_known))
         K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
         self.L = np.linalg.cholesky(nearestPD(K_plus_sig))
         self.alpha = cho_solve((self.L, True), self.y_known)
@@ -309,7 +311,7 @@ class gp_regressor(object):
         """
         n = len(y)
         assert n == len(X)
-        K = self.cov_fn.eval(X, X, *cov_params[0])
+        K = self.cov_fn.eval(X, X, *cov_params[0]) + self.y_known_sigma*np.eye(len(self.x_known))
         K_plus_sig = K + np.eye(n) * 1e-12
         L = np.linalg.cholesky(nearestPD(K_plus_sig))
         # alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
@@ -411,7 +413,7 @@ if __name__ == "__main__":
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel
     # sin test data
-    Xtrain = np.random.uniform(-4, 4, 80).reshape(-1,1)
+    Xtrain = np.random.uniform(-4, 4, 20).reshape(-1,1)
     ytrain = np.sin(Xtrain) + np.random.uniform(-8e-2, 8e-2, Xtrain.size).reshape(Xtrain.shape)
 
     my_gpr = gp_regressor(domain_bounds=((-4., 4.),))
@@ -473,8 +475,9 @@ if __name__ == "__main__":
     my_gpr_nd.fit(Xtrain, ytrain)
 
     n = 100
-    Xtest = np.linspace(-4.1, 4.1, n)
-    xt, yt = np.meshgrid(Xtest, Xtest)
+    Xtest = np.linspace(np.min(Xtrain[:, 0]), np.max(Xtrain[:, 0]), n)
+    Ytest = np.linspace(np.min(Xtrain[:, 1]), np.max(Xtrain[:, 1]), n)
+    xt, yt = np.meshgrid(Xtest, Ytest)
     Xtest = np.array((xt.flatten(), yt.flatten())).T
     ytest_mean = my_gpr_nd.predict(Xtest)
     zt = ytest_mean.reshape(xt.shape)
