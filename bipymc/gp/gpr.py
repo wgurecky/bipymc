@@ -32,11 +32,11 @@ class gp_kernel():
         self._param_bounds = []
 
     @abc.abstractmethod
-    def eval(self, a, b, *params):
+    def eval(self, x1, x2, *params):
         raise NotImplementedError
 
-    def __call__(self, x0, x1):
-        return self.eval(x0, x1, *self._params)
+    def __call__(self, x1, x2):
+        return self.eval(x1, x2, *self._params)
 
     @property
     def ndim(self):
@@ -90,12 +90,12 @@ class squared_exp(gp_kernel):
         params_0 = [1.0]
         super(squared_exp, self).__init__(ndim, params_0)
 
-    def eval(self, a, b, *params):
+    def eval(self, x1, x2, *params):
         if params:
             param = params[0]
         else:
             param = self.params[0]
-        sqdist = np.sum(a**2,1).reshape(-1,1) + np.sum(b**2,1) - 2*np.dot(a, b.T)
+        sqdist = np.sum(x1**2,1).reshape(-1,1) + np.sum(x2**2,1) - 2*np.dot(x1, x2.T)
         return np.exp(-.5 * (1/param) * sqdist)
 
     @property
@@ -111,15 +111,15 @@ class squared_exp_noise(gp_kernel):
         params_0 = [1.0, 1.0]
         super(squared_exp_noise, self).__init__(ndim, params_0)
 
-    def eval(self, a, b, *params):
-        n = a.shape[0]
+    def eval(self, x1, x2, *params):
+        n = x1.shape[0]
         if params:
             param = params[0]
             sigma_n = params[1]
         else:
             param = self.params[0]
             sigma_n = self.params[1]
-        sqdist = np.sum(a**2,1).reshape(-1,1) + np.sum(b**2,1) - 2*np.dot(a, b.T)
+        sqdist = np.sum(x1**2,1).reshape(-1,1) + np.sum(x2**2,1) - 2*np.dot(x1, x2.T)
         cov_m = np.exp(-.5 * (1/param) * sqdist)
         return cov_m * (sigma_n ** 2.0)
 
@@ -137,8 +137,8 @@ class squared_exp_noise_mv(gp_kernel):
         params_0 = np.array(list(np.ones((ndim)) * 0.2) + [1.0]) * 1e0
         super(squared_exp_noise_mv, self).__init__(ndim, params_0)
 
-    def eval(self, a, b, *params):
-        n = a.shape[0]
+    def eval(self, x1, x2, *params):
+        n = x1.shape[0]
         if params:
             l_param = params[:-1]
             sigma_n = params[-1]
@@ -146,7 +146,7 @@ class squared_exp_noise_mv(gp_kernel):
             l_param = self.params[:-1]
             sigma_n = self.params[-1]
         M = np.array(l_param) ** (-2.0) * np.eye(len(l_param))
-        cov_m = build_cov(a, b, M)
+        cov_m = build_cov(x1, x2, M)
         return cov_m * (sigma_n ** 2.0)
 
     def rel_var_importance(self):
@@ -158,11 +158,12 @@ class squared_exp_noise_mv(gp_kernel):
 
 
 @jit(nopython=True)
-def build_cov(a, b, M):
-    cov_m = np.zeros((len(a), len(b)))
-    for i in range(len(a)):
-        for j in range(len(b)):
-            cov_m[i, j] = np.exp(-0.5 * np.dot(a[i]-b[j], np.dot(M, (a[i] - b[j]).T)))
+def build_cov(x1, x2, M):
+    cov_m = np.zeros((len(x1), len(x2)))
+    for i in range(len(x1)):
+        for j in range(len(x2)):
+            v_diff = x1[i] - x2[j]
+            cov_m[i, j] = np.exp(-0.5 * np.dot(v_diff, np.dot(M, (v_diff).T)))
     return cov_m
 
 
@@ -264,7 +265,7 @@ class gp_regressor(object):
 
     def _update_cholesky_k(self):
         self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
-        K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-10
+        K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
         self.L = np.linalg.cholesky(nearestPD(K_plus_sig))
         self.alpha = cho_solve((self.L, True), self.y_known)
 
@@ -309,7 +310,7 @@ class gp_regressor(object):
         n = len(y)
         assert n == len(X)
         K = self.cov_fn.eval(X, X, *cov_params[0])
-        K_plus_sig = K + np.eye(n) * 1e-10
+        K_plus_sig = K + np.eye(n) * 1e-12
         L = np.linalg.cholesky(nearestPD(K_plus_sig))
         # alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
         alpha = cho_solve((L, True), y)
@@ -415,7 +416,7 @@ if __name__ == "__main__":
 
     my_gpr = gp_regressor(domain_bounds=((-4., 4.),))
     # my_gpr = gp_regressor(domain_bounds=True)
-    my_gpr.fit(Xtrain, ytrain, y_sigma=1e-4)
+    my_gpr.fit(Xtrain, ytrain, y_sigma=1e-2)
 
     n = 500
     Xtest = np.linspace(np.min(Xtrain), np.max(Xtrain), n).reshape(-1,1)
