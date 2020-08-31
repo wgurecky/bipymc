@@ -224,7 +224,7 @@ class gp_regressor(object):
     def x_known(self, x_known):
         self._x_known = x_known
 
-    def fit(self, x, y, y_sigma=1e-10, params_0=None, ln_params=True, method="direct", **kwargs):
+    def fit(self, x, y, y_sigma=1e-10, params_0=None, method="direct", **kwargs):
         """
         @brief Fit the kernel's shape params to the known data
         @param x np_ndarray
