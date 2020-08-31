@@ -38,12 +38,7 @@ class bo_optimizer(object):
         self.dim = dim
         self.search_bounds = s_bounds
         self.obj_f = lambda x: f(x, *fn_args, **fn_kwargs)
-        if isinstance(prior, gp_regressor):
-            assert prior.is_fit
-            self.y_sigma = kwargs.get("y_sigma", 1e-8)
-            self.gp_model = prior
-        else:
-            self._init_gp(x0, y0, dim, n_init, **kwargs)
+        self._init_gp(x0, y0, dim, n_init, prior, **kwargs)
 
     @property
     def x_known(self):
@@ -53,9 +48,11 @@ class bo_optimizer(object):
     def x_known(self, x_known):
         self._x_known = x_known
 
-    def _init_gp(self, x0, y0, dim, n_init, **kwargs):
+    def _init_gp(self, x0, y0, dim, n_init, prior, **kwargs):
         # setup gp model
         self.gp_model = gp_regressor(ndim=dim, domain_bounds=self.search_bounds)
+        if isinstance(prior, gp_regressor):
+            self.gp_model.set_prior(prior)
         # eval obj fn n_init times to seed the method
         if x0 is not None:
             self.x_known = x0
@@ -275,12 +272,19 @@ def one_dim_ex():
     # run optimizer
     my_bo.optimize(20)
 
+    # start new optimizer using old result gp surrogate as prior
+    my_bo_gp_prior = my_bo.gp_model
+    my_bo_updated = bo_optimizer(obj_fn_sin, dim=1, s_bounds=my_bounds, prior=deepcopy(my_bo_gp_prior), comm=comm)
+    my_bo_updated.optimize(4)
+
     # plot the response surface
     if comm.rank == 0:
         plt.figure()
         x_test = np.linspace(my_bounds[0][0], my_bounds[0][1], 100)
         plt.plot(x_test, my_bo.gp_model.predict(x_test), label="mean")
-        plt.scatter(my_bo.x_known, my_bo.y_known, label="samples", c='k', s=10, marker='x')
+        plt.scatter(my_bo.x_known, my_bo.y_known, label="samples", c='k', s=22, marker='o')
+        plt.plot(x_test, my_bo_updated.gp_model.predict(x_test), label="mean updated", ls='--', c='r')
+        plt.scatter(my_bo_updated.x_known, my_bo_updated.y_known, label="samples updated", c='r', s=22, marker='x')
         plt.grid(axis='both', ls='--', alpha=0.5)
         plt.legend()
         plt.savefig("bo_sin_test.png")

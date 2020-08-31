@@ -182,6 +182,7 @@ class gp_regressor(object):
         self.y_known = np.array([])
         # cov matrix storage to prevent unnecisasry recalc of cov matrix
         self.K, self.L, self.alpha = None, None, None
+        self.prior = None
 
     def __call__(self, x_test):
         """
@@ -239,7 +240,11 @@ class gp_regressor(object):
             self.y_shift = 0.0
         self.y_known = y - self.y_shift
         self.y_known_sigma = y_sigma
-        neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list)
+        if isinstance(self.prior, gp_regressor):
+            neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list) \
+                                             -1.0 * self.prior.log_like(self.prior.x_known, self.prior.y_known, p_list)
+        else:
+            neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list)
         if method == 'direct' or method == 'ncsu':
             res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds,
                                   maxf=kwargs.get('maxf', 600), algmethod=kwargs.get('algmethod', 1))
@@ -253,9 +258,13 @@ class gp_regressor(object):
         # pre-compute cholosky decomp of cov matrix
         self._update_cholesky_k()
 
+    def set_prior(self, prior):
+        assert isinstance(prior, gp_regressor)
+        self.prior = prior
+
     def _update_cholesky_k(self):
         self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
-        K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
+        K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-10
         self.L = np.linalg.cholesky(nearestPD(K_plus_sig))
         self.alpha = cho_solve((self.L, True), self.y_known)
 
@@ -300,7 +309,7 @@ class gp_regressor(object):
         n = len(y)
         assert n == len(X)
         K = self.cov_fn.eval(X, X, *cov_params[0])
-        K_plus_sig = K + np.eye(n) * 1e-12
+        K_plus_sig = K + np.eye(n) * 1e-10
         L = np.linalg.cholesky(nearestPD(K_plus_sig))
         # alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
         alpha = cho_solve((L, True), y)
@@ -401,8 +410,8 @@ if __name__ == "__main__":
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel
     # sin test data
-    Xtrain = np.random.uniform(-4, 4, 400).reshape(-1,1)
-    ytrain = np.sin(Xtrain) + np.random.uniform(-1e-2, 1e-2, Xtrain.size).reshape(Xtrain.shape)
+    Xtrain = np.random.uniform(-4, 4, 80).reshape(-1,1)
+    ytrain = np.sin(Xtrain) + np.random.uniform(-8e-2, 8e-2, Xtrain.size).reshape(Xtrain.shape)
 
     my_gpr = gp_regressor(domain_bounds=((-4., 4.),))
     # my_gpr = gp_regressor(domain_bounds=True)
