@@ -11,37 +11,66 @@
 # AUTHOR: William Gurecky
 # CONTACT: william.gurecky@gmail.com
 #==============================================================================
-from __future__ import division
+from __future__ import division, print_function
 from numba import jit
+import abc
+import six
 from scipy.linalg import cho_solve, solve_triangular
 import numpy as np
 from scipy.optimize import minimize, basinhopping
 from scipydirect import minimize as ncsu_direct_min
 
 
-class gp_kernel(object):
+@six.add_metaclass(abc.ABCMeta)
+class gp_kernel():
     """!
     @brief Used to generate a covarience matrix
     """
-    def __init__(self, ndim):
-        self._ndim = ndim
-        self._params = []
-        self.n_params = None
+    def __init__(self, ndim, params_0=[]):
+        self.ndim = ndim
+        self.params = params_0
+        self._param_bounds = []
 
-    def eval(self, a, b, *params):
+    @abc.abstractmethod
+    def eval(self, x1, x2, *params):
         raise NotImplementedError
 
-    def __call__(self, x0, x1):
-        return self.eval(x0, x1, *self._params)
+    def __call__(self, x1, x2):
+        return self.eval(x1, x2, *self._params)
+
+    @property
+    def ndim(self):
+        return self._ndim
+
+    @ndim.setter
+    def ndim(self, ndim):
+        assert ndim > 0
+        self._ndim = ndim
+
+    @property
+    @abc.abstractmethod
+    def n_params(self):
+        raise NotImplementedError
 
     @property
     def param_bounds(self):
-        # defaults to all params must be positive
+        # all params must be positive
+        if self._param_bounds:
+            return self._param_bounds
+        # default param bounds
         p_bounds = []
         for param in self.params:
-            p_bounds.append((0.005, 2.0))
-        p_bounds[-1] = (0.001, 1e2)
+            p_bounds.append((0.005, 10.0))
+        p_bounds[-1] = (0.001, 5e3)
         return p_bounds
+
+    @param_bounds.setter
+    def param_bounds(self, p_bounds):
+        if len(p_bounds) == len(self._params):
+            assert len(p_bounds[0]) == 2
+            self._param_bounds = p_bounds
+        else:
+            raise RuntimeError
 
     @property
     def params(self):
@@ -58,16 +87,20 @@ class squared_exp(gp_kernel):
     @brief Squared exponential kernel
     """
     def __init__(self, ndim=1):
-        self._params = [1.0]
-        self.n_params = 1
+        params_0 = [1.0]
+        super(squared_exp, self).__init__(ndim, params_0)
 
-    def eval(self, a, b, *params):
+    def eval(self, x1, x2, *params):
         if params:
             param = params[0]
         else:
             param = self.params[0]
-        sqdist = np.sum(a**2,1).reshape(-1,1) + np.sum(b**2,1) - 2*np.dot(a, b.T)
+        sqdist = np.sum(x1**2,1).reshape(-1,1) + np.sum(x2**2,1) - 2*np.dot(x1, x2.T)
         return np.exp(-.5 * (1/param) * sqdist)
+
+    @property
+    def n_params(self):
+        return 1
 
 
 class squared_exp_noise(gp_kernel):
@@ -75,20 +108,24 @@ class squared_exp_noise(gp_kernel):
     @brief Squared exponential kernel with extra noise parameter.
     """
     def __init__(self, ndim=1):
-        self._params = [1.0, 1.0]
-        self.n_params = 2
+        params_0 = [1.0, 1.0]
+        super(squared_exp_noise, self).__init__(ndim, params_0)
 
-    def eval(self, a, b, *params):
-        n = a.shape[0]
+    def eval(self, x1, x2, *params):
+        n = x1.shape[0]
         if params:
             param = params[0]
             sigma_n = params[1]
         else:
             param = self.params[0]
             sigma_n = self.params[1]
-        sqdist = np.sum(a**2,1).reshape(-1,1) + np.sum(b**2,1) - 2*np.dot(a, b.T)
+        sqdist = np.sum(x1**2,1).reshape(-1,1) + np.sum(x2**2,1) - 2*np.dot(x1, x2.T)
         cov_m = np.exp(-.5 * (1/param) * sqdist)
         return cov_m * (sigma_n ** 2.0)
+
+    @property
+    def n_params(self):
+        return 2
 
 
 class squared_exp_noise_mv(gp_kernel):
@@ -96,13 +133,12 @@ class squared_exp_noise_mv(gp_kernel):
     @brief Squared exponential kernel with extra noise parameter with
         individual length scale parameters for each input dimension.
     """
-    def __init__(self, n_dim=1, params_0=None, params_bounds=None):
-        self.ndim = n_dim
-        self._params = np.array(list(np.ones((n_dim)) * 0.2) + [1.0]) * 1e0
-        self.n_params = n_dim + 1
+    def __init__(self, ndim=1, params_0=None, params_bounds=None):
+        params_0 = np.array(list(np.ones((ndim)) * 0.2) + [1.0]) * 1e0
+        super(squared_exp_noise_mv, self).__init__(ndim, params_0)
 
-    def eval(self, a, b, *params):
-        n = a.shape[0]
+    def eval(self, x1, x2, *params):
+        n = x1.shape[0]
         if params:
             l_param = params[:-1]
             sigma_n = params[-1]
@@ -110,19 +146,24 @@ class squared_exp_noise_mv(gp_kernel):
             l_param = self.params[:-1]
             sigma_n = self.params[-1]
         M = np.array(l_param) ** (-2.0) * np.eye(len(l_param))
-        cov_m = build_cov(a, b, M)
+        cov_m = build_cov(x1, x2, M)
         return cov_m * (sigma_n ** 2.0)
 
     def rel_var_importance(self):
         return np.abs(self.params[:-1]) / np.sum(np.abs(self.params[:-1]))
 
+    @property
+    def n_params(self):
+        return self.ndim + 1
+
 
 @jit(nopython=True)
-def build_cov(a, b, M):
-    cov_m = np.zeros((len(a), len(b)))
-    for i in range(len(a)):
-        for j in range(len(b)):
-            cov_m[i, j] = np.exp(-0.5 * np.dot(a[i]-b[j], np.dot(M, (a[i] - b[j]).T)))
+def build_cov(x1, x2, M):
+    cov_m = np.zeros((len(x1), len(x2)))
+    for i in range(len(x1)):
+        for j in range(len(x2)):
+            v_diff = x1[i] - x2[j]
+            cov_m[i, j] = np.exp(-0.5 * np.dot(v_diff, np.dot(M, (v_diff).T)))
     return cov_m
 
 
@@ -142,6 +183,14 @@ class gp_regressor(object):
         self.y_known = np.array([])
         # cov matrix storage to prevent unnecisasry recalc of cov matrix
         self.K, self.L, self.alpha = None, None, None
+        self.prior = None
+
+    def __call__(self, x_test):
+        """
+        @brief Obtain mean estimate at points in x
+        @param x_test np_ndarray
+        """
+        return self.predict(x_test)
 
     def def_scale(self, domain_bounds):
         """!
@@ -155,7 +204,8 @@ class gp_regressor(object):
         if self.domain_bounds is not None:
             domain_bounds_min = np.asarray(self.domain_bounds)[:, 0]
             domain_bounds_max = np.asarray(self.domain_bounds)[:, 1]
-            return (x - domain_bounds_min) / (domain_bounds_max - domain_bounds_min)
+            x_trans = (x - domain_bounds_min) / (domain_bounds_max - domain_bounds_min)
+            return x_trans
         else:
             if self.verbose: print("WARNING: No bounds specified for GP")
             return x
@@ -192,13 +242,19 @@ class gp_regressor(object):
             self.y_shift = 0.0
         self.y_known = y - self.y_shift
         self.y_known_sigma = y_sigma
-        neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list)
+        if isinstance(self.prior, gp_regressor):
+            neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list) \
+                                             -1.0 * self.prior.log_like(self.prior.x_known, self.prior.y_known, p_list)
+        else:
+            neg_log_like_fn = lambda p_list: -1.0 * self.log_like(self.x_known, self.y_known, p_list)
         if method == 'direct' or method == 'ncsu':
             res = ncsu_direct_min(neg_log_like_fn, bounds=self.cov_fn.param_bounds,
-                                  maxf=kwargs.get('maxf', 600), algmethod=kwargs.get('algmethod', 1))
+                                  maxf=kwargs.get('maxf', 700), algmethod=kwargs.get('algmethod', 1),
+                                  eps=kwargs.get("eps", 1e-4))
         else:
-            res = basinhopping(neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
-                               niter=kwargs.get("niter", 30), interval=10, stepsize=0.1,
+            _neg_log_like_fn = lambda p_list: neg_log_like_fn(p_list)[0]
+            res = basinhopping(_neg_log_like_fn, x0=params_0, T=kwargs.get("T", 5.0), niter_success=12,
+                               niter=kwargs.get("niter", 90), interval=10, stepsize=0.1,
                                minimizer_kwargs={'bounds': self.cov_fn.param_bounds, 'method': method})
         cov_params = res.x
         print("Fitted Cov Fn Params:", cov_params)
@@ -206,8 +262,12 @@ class gp_regressor(object):
         # pre-compute cholosky decomp of cov matrix
         self._update_cholesky_k()
 
+    def set_prior(self, prior):
+        assert isinstance(prior, gp_regressor)
+        self.prior = prior
+
     def _update_cholesky_k(self):
-        self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma
+        self.K = self.cov_fn(self.x_known, self.x_known) + self.y_known_sigma*np.eye(len(self.x_known))
         K_plus_sig = self.K + np.eye(len(self.x_known)) * 1e-12
         self.L = np.linalg.cholesky(nearestPD(K_plus_sig))
         self.alpha = cho_solve((self.L, True), self.y_known)
@@ -252,8 +312,8 @@ class gp_regressor(object):
         """
         n = len(y)
         assert n == len(X)
-        K = self.cov_fn.eval(X, X, *cov_params[0])
-        K_plus_sig = K + np.eye(n) * 1e-10
+        K = self.cov_fn.eval(X, X, *cov_params[0]) + self.y_known_sigma*np.eye(len(self.x_known))
+        K_plus_sig = K + np.eye(n) * 1e-12
         L = np.linalg.cholesky(nearestPD(K_plus_sig))
         # alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
         alpha = cho_solve((L, True), y)
@@ -281,7 +341,7 @@ class gp_regressor(object):
             mu = self.predict(x_test)
             # compute scaling factor for unit-gaussian draws
             n = len(tr_x_test)
-            B = np.linalg.cholesky(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk))
+            B = np.linalg.cholesky(nearestPD(K_ss + diag_scale*np.eye(n) - np.dot(Lk.T, Lk)))
             # add tailored gauss noise to mean prediction
             res.append(mu.reshape(-1,1) + np.dot(B, np.random.normal(size=(n, n_draws))))
         result = np.array(res).reshape(-1, n_draws)
@@ -304,6 +364,13 @@ class gp_regressor(object):
             results.append(res)
         # expected shape: (len(xtest), n_draws)
         return np.array(results).reshape(-1, n_draws)
+
+    @property
+    def is_fit(self):
+        """
+        @brief Check if model has been fit
+        """
+        return self.K is not None
 
 
 def nearestPD(A):
@@ -347,15 +414,15 @@ if __name__ == "__main__":
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel
     # sin test data
-    Xtrain = np.random.uniform(-4, 4, 10).reshape(-1,1)
-    ytrain = np.sin(Xtrain) #+ np.random.uniform(-1e-2, 1e-2, Xtrain.size)
+    Xtrain = np.random.uniform(-4, 4, 20).reshape(-1,1)
+    ytrain = np.sin(Xtrain) + np.random.uniform(-8e-2, 8e-2, Xtrain.size).reshape(Xtrain.shape)
 
     my_gpr = gp_regressor(domain_bounds=((-4., 4.),))
     # my_gpr = gp_regressor(domain_bounds=True)
-    my_gpr.fit(Xtrain, ytrain)
+    my_gpr.fit(Xtrain, ytrain, y_sigma=1e-2)
 
     n = 500
-    Xtest = np.linspace(-5, 5, n).reshape(-1,1)
+    Xtest = np.linspace(np.min(Xtrain), np.max(Xtrain), n).reshape(-1,1)
     ytest_mean = my_gpr.predict(Xtest)
 
     ytest_samples = my_gpr.sample_y(Xtest, n_draws=200, chunk_size=1e10)
@@ -409,8 +476,9 @@ if __name__ == "__main__":
     my_gpr_nd.fit(Xtrain, ytrain)
 
     n = 100
-    Xtest = np.linspace(-4.1, 4.1, n)
-    xt, yt = np.meshgrid(Xtest, Xtest)
+    Xtest = np.linspace(np.min(Xtrain[:, 0]), np.max(Xtrain[:, 0]), n)
+    Ytest = np.linspace(np.min(Xtrain[:, 1]), np.max(Xtrain[:, 1]), n)
+    xt, yt = np.meshgrid(Xtest, Ytest)
     Xtest = np.array((xt.flatten(), yt.flatten())).T
     ytest_mean = my_gpr_nd.predict(Xtest)
     zt = ytest_mean.reshape(xt.shape)
