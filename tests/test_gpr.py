@@ -6,6 +6,9 @@ np.random.seed(42)
 
 
 class TestGaussianProcess(unittest.TestCase):
+    def setUp(self):
+        np.random.seed(42)
+
     def test_1d_gp(self):
         # sin data with noise
         Xtrain = np.random.uniform(-4, 4, 60).reshape(-1,1)

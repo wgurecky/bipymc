@@ -8,6 +8,9 @@ np.random.seed(42)
 
 
 class TestBayesOpt(unittest.TestCase):
+    def setUp(self):
+        np.random.seed(42)
+
     def test_1d_bo(self):
         comm = MPI.COMM_WORLD
         def obj_fn_sin(Xtest):
