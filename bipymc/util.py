@@ -52,7 +52,7 @@ def gelman_rubin_sweep(x, n_samples_req=100):
 
 def gelman_rubin_partial(x, n_burn=0, return_var=False):
     """!
-    @brief Helper function to compute GP diagnostic, discarding
+    @brief Helper function to compute GR diagnostic, discarding
     the first n_burn samples from each chain.
     @param x An array of dimension m x n x k, where m is the number of chains,
              n the number of samples, and k is the dimensionality of the param space.
