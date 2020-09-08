@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import time
 #
 from bipymc.utils import banana_rv, dblgauss_rv
+from bipymc.util import gelman_rubin_sweep, gelman_rubin_partial
 from bipymc.mc_plot import mc_plot
 from bipymc.demc import DeMcMpi
 from bipymc.dream import DreamMpi
@@ -72,6 +73,21 @@ class TestMcmcDblGauss(unittest.TestCase):
                     self.assertNotAlmostEqual(1.5, theta_est[1], delta=0.1)
                 else:
                     pass
+
+                if sampler_name == 'demc' or sampler_name == 'dream':
+                    # plot Gelman-Rubin chain convergence plot
+                    plt.figure()
+                    all_chains = my_mcmc.get_all_chains(self.comm.rank)
+                    gr_diagnostics = gelman_rubin_sweep(all_chains)
+                    for d, grd in enumerate(gr_diagnostics):
+                        plt.scatter(np.arange(len(grd)) + 100, grd, label='x'+str(d), s=2)
+                    plt.legend()
+                    plt.grid(ls='--', alpha=0.5)
+                    plt.axhline(1.1, xmax=len(grd) + 100, ls='--', c='r')
+                    plt.ylabel('Gelman-Rubin diagnostic')
+                    plt.xlabel('N samples')
+                    plt.savefig(str(sampler_name) + "_bimodal_gauss_gelman_rubin.png")
+                    plt.close()
 
                 # plot mcmc samples
                 plt.figure()

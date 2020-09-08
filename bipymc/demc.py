@@ -277,6 +277,19 @@ class DeMcMpi(DeMc):
         """
         return list(self.iter_all_chains(collection_rank))
 
+    def get_all_chains(self, collection_rank=0):
+        """!
+        @brief Get samples of all chains
+        @return all_chains in n x m x k vector
+               m is number of chains, n is number of samples,
+               and k is the dimension of sample space.
+        """
+        all_chain = []
+        for chain in self.iter_all_chains(collection_rank):
+            all_chain.append(chain.chain)
+        all_chain = np.asarray(all_chain)
+        return all_chain
+
     def iter_local_chains(self):
         """!
         @brief Local chain generator
